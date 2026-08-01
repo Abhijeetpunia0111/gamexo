@@ -1,4 +1,4 @@
-import { Edit3, Minus, Package, Plus, Trash2 } from 'lucide-react'
+import { Edit3, Minus, Package, Plus } from 'lucide-react'
 import { EQUIPMENT, SPORTS, listEquipment, money, type Equipment as EquipmentItem } from '../data/booking'
 import { useState } from 'react'
 import * as db from '../lib/db'
@@ -202,6 +202,13 @@ export default function Equipment() {
           </table>
         </div>
       </div>
+      {editorItem ? (
+        <EquipmentEditorDrawer
+          item={editorItem}
+          onClose={() => setEditorItem(null)}
+          onSaved={() => setEditorItem(null)}
+        />
+      ) : null}
     </div>
   )
 }

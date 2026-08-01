@@ -109,7 +109,16 @@ export function issueStock(equipment: Record<string, number>) {
 
 /* ---------- equipment catalogue overrides (admin-managed, layered over the static catalogue) ---------- */
 
-export type EquipmentOverride = { stock: number; activeForSale: boolean; sports: string[] }
+export type EquipmentOverride = {
+  stock: number
+  activeForSale: boolean
+  sports: string[]
+  name?: string
+  hint?: string
+  price?: number
+  returnable?: boolean
+  deposit?: number
+}
 
 export const getEquipmentOverrides = () => read<Record<string, EquipmentOverride>>('equipmentOverrides', {})
 
@@ -131,6 +140,9 @@ export const setEquipmentActive = (itemId: string, activeForSale: boolean, fallb
 
 export const setEquipmentSports = (itemId: string, sports: string[], fallback: EquipmentOverride) =>
   patchEquipmentOverride(itemId, fallback, { sports })
+
+export const setEquipmentDetails = (itemId: string, patch: Partial<EquipmentOverride>, fallback: EquipmentOverride) =>
+  patchEquipmentOverride(itemId, fallback, patch)
 
 /* ---------- equipment rentals (returnable gear, checked out and back) ---------- */
 

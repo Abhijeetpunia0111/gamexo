@@ -108,8 +108,27 @@ export const equipmentById = (id: string) => EQUIPMENT.find((e) => e.id === id)
  *  the raw catalogue, so an admin edit shows up everywhere at once. */
 export function listEquipment(): (Equipment & { activeForSale: boolean })[] {
   return EQUIPMENT.map((item) => {
-    const override = db.getEquipmentOverride(item.id, { stock: item.stock, activeForSale: true, sports: item.sports })
-    return { ...item, stock: override.stock, sports: override.sports, activeForSale: override.activeForSale }
+    const override = db.getEquipmentOverride(item.id, {
+      stock: item.stock,
+      activeForSale: true,
+      sports: item.sports,
+      name: item.name,
+      hint: item.hint,
+      price: item.price,
+      returnable: item.returnable,
+      deposit: item.deposit,
+    })
+    return {
+      ...item,
+      stock: override.stock,
+      sports: override.sports,
+      activeForSale: override.activeForSale,
+      name: override.name || item.name,
+      hint: override.hint || item.hint,
+      price: override.price ?? item.price,
+      returnable: override.returnable ?? item.returnable,
+      deposit: override.deposit ?? item.deposit,
+    }
   })
 }
 

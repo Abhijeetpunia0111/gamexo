@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Edit3, Trash2, X } from 'lucide-react'
+import { Edit3, X } from 'lucide-react'
 import type { Equipment as EquipmentItem } from '../data/booking'
 import * as db from '../lib/db'
 
@@ -17,18 +17,25 @@ export default function EquipmentEditorDrawer({
   const [price, setPrice] = useState(String(item.price))
   const [stock, setStock] = useState(String(item.stock))
   const [active, setActive] = useState(item.activeForSale)
-  const [sports, setSports] = useState(item.sports)
+
+  const parsedPrice = Number(price)
+  const parsedStock = Math.max(0, Math.round(Number(stock)))
 
   const save = () => {
     const fallback = { stock: item.stock, activeForSale: item.activeForSale, sports: item.sports }
-    db.setEquipmentStock(item.id, Number(price) === item.price ? Number(stock) : Number(stock), fallback)
+    db.setEquipmentStock(item.id, Number.isFinite(parsedStock) ? parsedStock : item.stock, fallback)
+    db.setEquipmentDetails(
+      item.id,
+      { name: name.trim() || item.name, hint: hint.trim() || item.hint, price: Number.isFinite(parsedPrice) ? parsedPrice : item.price },
+      fallback,
+    )
     db.setEquipmentActive(item.id, active, fallback)
-    db.setEquipmentSports(item.id, sports, fallback)
     onSaved()
   }
 
   const remove = () => {
-    db.setEquipmentActive(item.id, false, { stock: item.stock, activeForSale: item.activeForSale, sports: item.sports })
+    const fallback = { stock: item.stock, activeForSale: item.activeForSale, sports: item.sports }
+    db.setEquipmentActive(item.id, false, fallback)
     onSaved()
   }
 
@@ -51,8 +58,8 @@ export default function EquipmentEditorDrawer({
             <p className="text-sm font-semibold text-ink">Preview</p>
             <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-border-input bg-surface p-4">
               <div>
-                <p className="text-lg font-semibold text-ink">{item.name}</p>
-                <p className="mt-1 text-sm text-slate">{item.hint}</p>
+                <p className="text-lg font-semibold text-ink">{name}</p>
+                <p className="mt-1 text-sm text-slate">{hint}</p>
               </div>
               <button type="button" className="flex h-10 w-10 items-center justify-center rounded-full border border-border-input bg-white text-slate">
                 <Edit3 size={18} />
@@ -82,7 +89,13 @@ export default function EquipmentEditorDrawer({
           </div>
 
           <div className="flex flex-col gap-3 rounded-2xl border border-border-card bg-white p-4">
-            <span className="text-sm font-semibold text-ink">Linked sports</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-ink">Linked sports</span>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="accent-ink" />
+                <span className="text-slate">Visible in shop</span>
+              </label>
+            </div>
             <div className="flex flex-wrap gap-2">
               {item.sports.map((sportId) => (
                 <span key={sportId} className="rounded-full bg-surface-muted px-3 py-1 text-xs text-slate">{sportId}</span>
