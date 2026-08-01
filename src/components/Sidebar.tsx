@@ -32,10 +32,10 @@ const primaryItems: NavItem[] = [
   { label: 'Bookings', icon: calendar, view: 'bookings' },
   { label: 'Members', icon: userPlus, view: 'members' },
   { label: 'Manage', icon: storeManagement, submenu: true },
-  { label: 'Sales', icon: storeManagement, submenu: true },
+  { label: 'Sales', icon: storeManagement, view: 'sales' },
   { label: 'Inventory', icon: packageDelivered, view: 'equipment' },
   { label: 'Academy', icon: mortarboard, view: 'academy' },
-  { label: 'Events', icon: olympicTorch },
+  { label: 'Events', icon: olympicTorch, view: 'events' },
 ]
 
 const manageItems: { label: string; view: View }[] = [
@@ -168,6 +168,7 @@ export default function Sidebar({
             <div className="flex w-full flex-col gap-1">
               <button
                 type="button"
+                onClick={() => onNavigate('helpCenter')}
                 className="flex h-[38px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate hover:bg-white/60"
               >
                 <img src={helpSquareRounded} alt="" className="size-[18px]" />
@@ -175,6 +176,7 @@ export default function Sidebar({
               </button>
               <button
                 type="button"
+                onClick={() => onNavigate('settings')}
                 className="flex h-[38px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate hover:bg-white/60"
               >
                 <img src={settings} alt="" className="h-[18px] w-auto" />

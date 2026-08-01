@@ -29,6 +29,9 @@ import storeManagement from './assets/figma/store-management.svg'
 import userPlus from './assets/figma/user-plus.svg'
 import mortarboard from './assets/figma/mortarboard.svg'
 import packageDelivered from './assets/figma/package-delivered.svg'
+import helpSquareRounded from './assets/figma/help-square-rounded.svg'
+import settings from './assets/figma/settings.svg'
+import olympicTorch from './assets/figma/olympic-torch.svg'
 
 export type View =
   | 'dashboard'
@@ -39,6 +42,10 @@ export type View =
   | 'members'
   | 'academy'
   | 'equipment'
+  | 'events'
+  | 'sales'
+  | 'settings'
+  | 'helpCenter'
   | 'manageCourts'
   | 'manageCoaches'
   | 'manageUsers'
@@ -173,12 +180,47 @@ function App() {
             <NotificationSettings />
           </>
         )}
+        {view === 'sales' && (
+          <>
+            <Header onMenuClick={() => setSidebarOpen(true)} title="Sales" icon={shoppingCartAdd} dateIcon={calendar05} />
+            <ComingSoon label="Sales" />
+          </>
+        )}
+        {view === 'events' && (
+          <>
+            <Header onMenuClick={() => setSidebarOpen(true)} title="Events" icon={olympicTorch} dateIcon={calendar05} />
+            <ComingSoon label="Events" />
+          </>
+        )}
+        {view === 'settings' && (
+          <>
+            <Header onMenuClick={() => setSidebarOpen(true)} title="Settings" icon={settings} dateIcon={calendar05} />
+            <ComingSoon label="Settings" />
+          </>
+        )}
+        {view === 'helpCenter' && (
+          <>
+            <Header onMenuClick={() => setSidebarOpen(true)} title="Help Center" icon={helpSquareRounded} dateIcon={calendar05} />
+            <ComingSoon label="Help Center" />
+          </>
+        )}
         {view === 'manageStaff' && (
           <>
             <Header onMenuClick={() => setSidebarOpen(true)} title="Manage Staff" icon={storeManagement} dateIcon={calendar05} />
             <StaffManagement />
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+function ComingSoon({ label }: { label: string }) {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <div className="rounded-3xl border border-dashed border-border-card bg-white/80 px-10 py-12 text-center shadow-sm">
+        <p className="text-xl font-semibold text-ink">{label} is coming soon</p>
+        <p className="mt-3 text-sm text-slate">We’re building this experience now. Check back soon for the launch.</p>
       </div>
     </div>
   )

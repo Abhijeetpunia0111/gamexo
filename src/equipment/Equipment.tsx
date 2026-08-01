@@ -1,6 +1,8 @@
-import { Minus, Package, Plus } from 'lucide-react'
+import { Edit3, Minus, Package, Plus, Trash2 } from 'lucide-react'
 import { EQUIPMENT, SPORTS, listEquipment, money, type Equipment as EquipmentItem } from '../data/booking'
+import { useState } from 'react'
 import * as db from '../lib/db'
+import EquipmentEditorDrawer from './EquipmentEditorDrawer'
 
 function fallbackFor(item: EquipmentItem & { activeForSale: boolean }) {
   return { stock: item.stock, activeForSale: item.activeForSale, sports: item.sports }
@@ -20,6 +22,7 @@ export default function Equipment() {
   const adjustments = db.getStockAdjustments()
   const items = listEquipment()
   const openRentals = db.getRentals().filter((r) => r.status === 'out' || r.status === 'maintenance')
+  const [editorItem, setEditorItem] = useState<(EquipmentItem & { activeForSale: boolean }) | null>(null)
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-5 sm:px-6">
@@ -36,7 +39,7 @@ export default function Equipment() {
           const s = stats(item.id, adjustments, item.stock)
           const fallback = fallbackFor(item)
           return (
-            <div key={item.id} className={`flex flex-col gap-3 rounded-xl border bg-white p-4 ${item.activeForSale ? 'border-border-card' : 'border-border-card opacity-60'}`}>
+            <div key={item.id} className={`flex flex-col gap-3 rounded-3xl border bg-white p-4 ${item.activeForSale ? 'border-border-card' : 'border-border-card opacity-60'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3">
                   <div className="flex size-9 items-center justify-center rounded-full bg-surface-muted text-ink">
@@ -48,17 +51,27 @@ export default function Equipment() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => db.setEquipmentActive(item.id, !item.activeForSale, fallback)}
-                  aria-pressed={item.activeForSale}
-                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${item.activeForSale ? 'bg-lime' : 'bg-surface-muted'}`}
-                  title={item.activeForSale ? 'In shop — tap to hide' : 'Hidden — tap to list in shop'}
-                >
-                  <span
-                    className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${item.activeForSale ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
-                  />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditorItem(item)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-border-input bg-white text-slate shadow-sm transition hover:bg-surface"
+                    title="Edit item"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => db.setEquipmentActive(item.id, !item.activeForSale, fallback)}
+                    aria-pressed={item.activeForSale}
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${item.activeForSale ? 'bg-lime' : 'bg-surface-muted'}`}
+                    title={item.activeForSale ? 'In shop — tap to hide' : 'Hidden — tap to list in shop'}
+                  >
+                    <span
+                      className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${item.activeForSale ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between rounded-lg bg-surface-muted px-3 py-2">
