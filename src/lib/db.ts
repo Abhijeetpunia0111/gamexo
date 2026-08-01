@@ -183,6 +183,57 @@ export function saveMembership(membership: MembershipRecord) {
 
 export const membershipsForCustomer = (phone: string) => getMemberships().filter((m) => m.customer.phone === phone)
 
+/* ---------- membership plan admin (price/benefit overrides layered over the generated catalogue,
+   same shape as equipmentOverrides — plus fully custom plans that don't map to a generated sport-tier) ---------- */
+
+export type PlanStatus = 'active' | 'paused' | 'deleted'
+export type PlanOverride = { price?: number; discountPercent?: number; benefits?: string; status: PlanStatus }
+
+export const getPlanOverrides = () => read<Record<string, PlanOverride>>('planOverrides', {})
+
+export function patchPlanOverride(id: string, patch: Partial<PlanOverride>) {
+  const all = getPlanOverrides()
+  const existing: PlanOverride = all[id] || { status: 'active' }
+  all[id] = { ...existing, ...patch }
+  write('planOverrides', all)
+}
+
+export type CustomPlan = {
+  id: string
+  name: string
+  price: number
+  durationMonths: number
+  discountPercent: number
+  benefits: string
+  sportsIncluded: string[]
+  status: PlanStatus
+  createdAt: string
+}
+
+export const getCustomPlans = () => read<CustomPlan[]>('customPlans', [])
+
+export function saveCustomPlan(plan: CustomPlan) {
+  const all = getCustomPlans()
+  const idx = all.findIndex((p) => p.id === plan.id)
+  if (idx >= 0) all[idx] = plan
+  else all.unshift(plan)
+  write('customPlans', all)
+}
+
+export function patchCustomPlan(id: string, patch: Partial<CustomPlan>) {
+  write(
+    'customPlans',
+    getCustomPlans().map((p) => (p.id === id ? { ...p, ...patch } : p)),
+  )
+}
+
+export function deleteCustomPlan(id: string) {
+  write(
+    'customPlans',
+    getCustomPlans().filter((p) => p.id !== id),
+  )
+}
+
 /* ---------- academy enrollments ---------- */
 
 export const getStudents = () => read<Student[]>('students', [])
@@ -199,19 +250,118 @@ export function saveStudent(student: Student) {
 export const studentsForCustomer = (phone: string) => getStudents().filter((s) => s.customer.phone === phone)
 export const studentsInBatch = (batchId: string) => getStudents().filter((s) => s.batchId === batchId && s.status === 'active')
 
-/* ---------- staff & roles ---------- */
+/* ---------- staff, roles & access ---------- */
 
 export type StaffRole = 'admin' | 'staff' | 'coach'
-export type StaffMember = { id: string; name: string; phone: string; role: StaffRole; specialty?: string }
+export type StaffStatus = 'active' | 'inactive'
+export type Permission =
+  | 'dashboard'
+  | 'bookings'
+  | 'equipment'
+  | 'payments'
+  | 'reports'
+  | 'settings'
+  | 'staffManagement'
+  | 'membership'
 
-const DEFAULT_STAFF: StaffMember[] = [
-  { id: 'ST1', name: 'Rohan Verma', phone: '9820011223', role: 'admin' },
-  { id: 'ST2', name: 'Priya Nair', phone: '9820011224', role: 'staff' },
-  { id: 'ST3', name: 'Arjun Mehta', phone: '9820011225', role: 'coach', specialty: 'Badminton' },
-  { id: 'ST4', name: 'Kavya Reddy', phone: '9820011226', role: 'coach', specialty: 'Swimming' },
+export type StaffMember = {
+  id: string
+  name: string
+  phone: string
+  email: string
+  role: StaffRole
+  specialty?: string
+  joiningDate: string
+  status: StaffStatus
+  sportsAssigned: string[]
+  lastLogin: string
+  permissions: Permission[]
+}
+
+export const ALL_PERMISSIONS: { id: Permission; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'bookings', label: 'Bookings' },
+  { id: 'equipment', label: 'Equipment' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'reports', label: 'Reports' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'staffManagement', label: 'Staff Management' },
+  { id: 'membership', label: 'Membership' },
 ]
 
-export const getStaff = () => read<StaffMember[]>('staff', DEFAULT_STAFF)
+const DEFAULT_PERMISSIONS: Record<StaffRole, Permission[]> = {
+  admin: ['dashboard', 'bookings', 'equipment', 'payments', 'reports', 'settings', 'staffManagement', 'membership'],
+  staff: ['dashboard', 'bookings', 'equipment', 'payments'],
+  coach: ['dashboard', 'bookings'],
+}
+
+const DEFAULT_STAFF: StaffMember[] = [
+  {
+    id: 'ST1',
+    name: 'Rohan Verma',
+    phone: '9820011223',
+    email: 'rohan@xcourt.com',
+    role: 'admin',
+    joiningDate: '2024-01-15',
+    status: 'active',
+    sportsAssigned: [],
+    lastLogin: new Date().toISOString(),
+    permissions: DEFAULT_PERMISSIONS.admin,
+  },
+  {
+    id: 'ST2',
+    name: 'Priya Nair',
+    phone: '9820011224',
+    email: 'priya@xcourt.com',
+    role: 'staff',
+    joiningDate: '2024-03-10',
+    status: 'active',
+    sportsAssigned: [],
+    lastLogin: new Date(Date.now() - 3_600_000).toISOString(),
+    permissions: DEFAULT_PERMISSIONS.staff,
+  },
+  {
+    id: 'ST3',
+    name: 'Arjun Mehta',
+    phone: '9820011225',
+    email: 'arjun@xcourt.com',
+    role: 'coach',
+    specialty: 'Badminton',
+    joiningDate: '2024-05-02',
+    status: 'active',
+    sportsAssigned: ['badminton'],
+    lastLogin: new Date(Date.now() - 7_200_000).toISOString(),
+    permissions: DEFAULT_PERMISSIONS.coach,
+  },
+  {
+    id: 'ST4',
+    name: 'Kavya Reddy',
+    phone: '9820011226',
+    email: 'kavya@xcourt.com',
+    role: 'coach',
+    specialty: 'Swimming',
+    joiningDate: '2024-06-20',
+    status: 'active',
+    sportsAssigned: ['swimming'],
+    lastLogin: new Date(Date.now() - 86_400_000).toISOString(),
+    permissions: DEFAULT_PERMISSIONS.coach,
+  },
+]
+
+/** Fills in any fields missing from an older/partial record already sitting in localStorage. */
+function normalizeStaff(m: Partial<StaffMember> & Pick<StaffMember, 'id' | 'name' | 'phone' | 'role'>): StaffMember {
+  return {
+    email: '',
+    joiningDate: new Date().toISOString().slice(0, 10),
+    status: 'active',
+    sportsAssigned: [],
+    lastLogin: new Date().toISOString(),
+    permissions: DEFAULT_PERMISSIONS[m.role],
+    ...m,
+  }
+}
+
+export const getStaff = () => read<StaffMember[]>('staff', DEFAULT_STAFF).map(normalizeStaff)
 
 export function saveStaffMember(member: StaffMember) {
   const all = getStaff()
@@ -224,7 +374,28 @@ export function saveStaffMember(member: StaffMember) {
 export function setStaffRole(id: string, role: StaffRole) {
   write(
     'staff',
-    getStaff().map((m) => (m.id === id ? { ...m, role } : m)),
+    getStaff().map((m) => (m.id === id ? { ...m, role, permissions: DEFAULT_PERMISSIONS[role] } : m)),
+  )
+}
+
+export function setStaffPermissions(id: string, permissions: Permission[]) {
+  write(
+    'staff',
+    getStaff().map((m) => (m.id === id ? { ...m, permissions } : m)),
+  )
+}
+
+export function setStaffStatus(id: string, status: StaffStatus) {
+  write(
+    'staff',
+    getStaff().map((m) => (m.id === id ? { ...m, status } : m)),
+  )
+}
+
+export function deleteStaffMember(id: string) {
+  write(
+    'staff',
+    getStaff().filter((m) => m.id !== id),
   )
 }
 

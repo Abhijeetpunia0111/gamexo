@@ -1,4 +1,4 @@
-const STEPS = ['Select Sports & Court', 'Date & Time', 'Player Details', 'Add Ons', 'Payments'] as const
+export const STEPS = ['Select Sports & Court', 'Date & Time', 'Player Details', 'Add Ons', 'Payments'] as const
 
 export default function Stepper({
   current,

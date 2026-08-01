@@ -1,12 +1,43 @@
 import { useEffect, useState } from 'react'
 import { Check, Search, X } from 'lucide-react'
-import { balanceOf, courtById, money, priceEquipment, withExtras, type Booking } from '../data/booking'
+import { balanceOf, courtById, listEquipment, money, priceEquipment, withExtras, type Booking } from '../data/booking'
 import * as db from '../lib/db'
 
 const inputClass =
   'w-full rounded-lg border border-border-input bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-ink focus:outline-none'
 
 type Mode = 'booking' | 'new'
+
+function defaultDueBack() {
+  return new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 16)
+}
+
+/** Returnable gear in the tray opens a rental (deposit, due-back) instead of a one-way sale;
+ *  everything else still goes through the ordinary stock deduction. This is the one place
+ *  either checkout path issues equipment from — Inventory only manages the shelf. */
+function issueTray(tray: Record<string, number>, customer: { name: string; phone: string }, dueBackAt: string) {
+  const items = listEquipment()
+  const consumable: Record<string, number> = {}
+  let depositTotal = 0
+  for (const [id, qty] of Object.entries(tray)) {
+    const item = items.find((e) => e.id === id)
+    if (item?.returnable) {
+      db.issueRental({
+        itemId: id,
+        qty,
+        deposit: (item.deposit || 0) * qty,
+        customer,
+        issuedAt: new Date().toISOString(),
+        dueBackAt: new Date(dueBackAt).toISOString(),
+      })
+      depositTotal += (item.deposit || 0) * qty
+    } else {
+      consumable[id] = qty
+    }
+  }
+  if (Object.keys(consumable).length > 0) db.issueStock(consumable)
+  return depositTotal
+}
 
 export default function CheckoutSheet({
   tray,
@@ -25,10 +56,14 @@ export default function CheckoutSheet({
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [payingNow, setPayingNow] = useState(true)
+  const [dueBackAt, setDueBackAt] = useState(defaultDueBack)
 
   const [success, setSuccess] = useState<{ headline: string; detail: string } | null>(null)
 
   const totals = priceEquipment(tray)
+  const equipmentList = listEquipment()
+  const rentalLines = Object.entries(tray).filter(([id]) => equipmentList.find((e) => e.id === id)?.returnable)
+  const depositDue = rentalLines.reduce((sum, [id, qty]) => sum + (equipmentList.find((e) => e.id === id)?.deposit || 0) * qty, 0)
 
   const openGames = db
     .getBookings()
@@ -47,10 +82,10 @@ export default function CheckoutSheet({
     if (!picked) return
     const updated = withExtras(picked, tray)
     db.saveBooking(updated)
-    db.issueStock(tray)
+    const deposit = issueTray(tray, { name: updated.customer.name, phone: updated.customer.phone }, dueBackAt)
     setSuccess({
       headline: `Added to ${courtById(updated.courtId)?.name}`,
-      detail: `${updated.customer.name} · balance now ${money(balanceOf(updated))}`,
+      detail: `${updated.customer.name} · balance now ${money(balanceOf(updated))}${deposit > 0 ? ` · ${money(deposit)} deposit collected` : ''}`,
     })
   }
 
@@ -80,10 +115,12 @@ export default function CheckoutSheet({
     }
     db.saveSale(sale)
     db.upsertCustomer({ name: sale.customer.name, phone: sale.customer.phone, email: sale.customer.email })
-    db.issueStock(tray)
+    const deposit = issueTray(tray, { name: sale.customer.name, phone: sale.customer.phone }, dueBackAt)
     setSuccess({
       headline: 'Tab opened',
-      detail: payingNow ? 'Paid in full.' : `Balance to collect: ${money(totals.total)}`,
+      detail:
+        (payingNow ? 'Paid in full.' : `Balance to collect: ${money(totals.total)}`) +
+        (deposit > 0 ? ` · ${money(deposit)} deposit collected` : ''),
     })
   }
 
@@ -121,6 +158,21 @@ export default function CheckoutSheet({
             </div>
 
             <p className="text-sm text-slate">There is no anonymous sale — every tray lands on a bill or a tab.</p>
+
+            {rentalLines.length > 0 && (
+              <div className="flex items-center justify-between gap-3 rounded-lg bg-flame/10 px-3.5 py-2.5">
+                <label className="flex flex-1 items-center gap-2 text-xs text-flame">
+                  Return by
+                  <input
+                    type="datetime-local"
+                    value={dueBackAt}
+                    onChange={(e) => setDueBackAt(e.target.value)}
+                    className="rounded-md border border-flame/30 bg-white px-2 py-1 text-xs text-ink"
+                  />
+                </label>
+                <span className="shrink-0 text-xs font-medium text-flame">{money(depositDue)} deposit</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-1 rounded-lg bg-surface-muted p-1">
               <button

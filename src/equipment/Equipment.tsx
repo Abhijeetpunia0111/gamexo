@@ -1,12 +1,14 @@
-import { useState } from 'react'
-import { Package } from 'lucide-react'
-import { EQUIPMENT, money, type Equipment as EquipmentItem } from '../data/booking'
+import { Minus, Package, Plus } from 'lucide-react'
+import { EQUIPMENT, SPORTS, listEquipment, money, type Equipment as EquipmentItem } from '../data/booking'
 import * as db from '../lib/db'
-import IssueDialog from './IssueDialog'
 
-function stats(item: EquipmentItem, adjustments: Record<string, number>) {
-  const available = item.stock + (adjustments[item.id] || 0)
-  const rentals = db.getRentals().filter((r) => r.itemId === item.id)
+function fallbackFor(item: EquipmentItem & { activeForSale: boolean }) {
+  return { stock: item.stock, activeForSale: item.activeForSale, sports: item.sports }
+}
+
+function stats(itemId: string, adjustments: Record<string, number>, stock: number) {
+  const available = stock + (adjustments[itemId] || 0)
+  const rentals = db.getRentals().filter((r) => r.itemId === itemId)
   const issued = rentals.filter((r) => r.status === 'out').reduce((sum, r) => sum + r.qty, 0)
   const lost = rentals.filter((r) => r.status === 'lost').reduce((sum, r) => sum + r.qty, 0)
   const maintenance = rentals.filter((r) => r.status === 'maintenance').reduce((sum, r) => sum + r.qty, 0)
@@ -15,51 +17,105 @@ function stats(item: EquipmentItem, adjustments: Record<string, number>) {
 
 export default function Equipment() {
   db.useDbVersion()
-  const [issuing, setIssuing] = useState<EquipmentItem | null>(null)
   const adjustments = db.getStockAdjustments()
+  const items = listEquipment()
   const openRentals = db.getRentals().filter((r) => r.status === 'out' || r.status === 'maintenance')
 
   return (
     <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-5 sm:px-6">
-      <p className="text-lg text-ink">Inventory</p>
+      <div>
+        <p className="text-lg text-ink">Inventory</p>
+        <p className="text-sm text-muted">
+          Restock, link kit to a sport for relevant booking recommendations, and control what shows up in the shop.
+          Issuing and returning gear happens from Add-ons.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {EQUIPMENT.map((item) => {
-          const s = stats(item, adjustments)
+        {items.map((item) => {
+          const s = stats(item.id, adjustments, item.stock)
+          const fallback = fallbackFor(item)
           return (
-            <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-border-card bg-white p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-9 items-center justify-center rounded-full bg-surface-muted text-ink">
-                  <Package size={16} />
+            <div key={item.id} className={`flex flex-col gap-3 rounded-xl border bg-white p-4 ${item.activeForSale ? 'border-border-card' : 'border-border-card opacity-60'}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-9 items-center justify-center rounded-full bg-surface-muted text-ink">
+                    <Package size={16} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{item.name}</p>
+                    <p className="text-xs text-muted">{item.hint}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-ink">{item.name}</p>
-                  <p className="text-xs text-muted">{item.hint}</p>
+
+                <button
+                  type="button"
+                  onClick={() => db.setEquipmentActive(item.id, !item.activeForSale, fallback)}
+                  aria-pressed={item.activeForSale}
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${item.activeForSale ? 'bg-lime' : 'bg-surface-muted'}`}
+                  title={item.activeForSale ? 'In shop — tap to hide' : 'Hidden — tap to list in shop'}
+                >
+                  <span
+                    className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${item.activeForSale ? 'translate-x-[18px]' : 'translate-x-0.5'}`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg bg-surface-muted px-3 py-2">
+                <span className="text-xs text-muted">On shelf</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => db.setEquipmentStock(item.id, item.stock - 1, fallback)}
+                    className="flex size-6 items-center justify-center rounded-md bg-white text-ink"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span className="w-6 text-center text-sm font-semibold text-ink">{item.stock}</span>
+                  <button
+                    type="button"
+                    onClick={() => db.setEquipmentStock(item.id, item.stock + 1, fallback)}
+                    className="flex size-6 items-center justify-center rounded-md bg-white text-ink"
+                  >
+                    <Plus size={12} />
+                  </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <Stat label="On shelf" value={String(item.stock)} />
                 <Stat label="Available" value={String(s.available)} tone={s.available <= 0 ? 'negative' : undefined} />
                 {item.returnable && <Stat label="Issued" value={String(s.issued)} />}
                 {item.returnable && s.lost > 0 && <Stat label="Lost" value={String(s.lost)} tone="negative" />}
                 {item.returnable && s.maintenance > 0 && <Stat label="Maintenance" value={String(s.maintenance)} tone="flame" />}
               </div>
 
+              <div className="flex flex-col gap-1.5 border-t border-border-card pt-3">
+                <span className="text-xs font-medium text-muted">Linked sports · blank = general kit</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {SPORTS.map((sport) => {
+                    const linked = item.sports.includes(sport.id)
+                    return (
+                      <button
+                        key={sport.id}
+                        type="button"
+                        onClick={() => {
+                          const next = linked ? item.sports.filter((id) => id !== sport.id) : [...item.sports, sport.id]
+                          db.setEquipmentSports(item.id, next, fallback)
+                        }}
+                        className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                          linked ? 'bg-ink text-bone' : 'bg-surface-muted text-slate'
+                        }`}
+                      >
+                        {sport.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between border-t border-border-card pt-3">
                 <span className="text-sm font-medium text-positive">{money(item.price)}</span>
-                {item.returnable ? (
-                  <button
-                    type="button"
-                    disabled={s.available <= 0}
-                    onClick={() => setIssuing(item)}
-                    className="rounded-lg border border-border-input bg-white px-3.5 py-1.5 text-xs text-ink disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Issue
-                  </button>
-                ) : (
-                  <span className="text-xs text-muted">Sold via Add-ons</span>
-                )}
+                <span className="text-xs text-muted">{item.returnable ? `₹${item.deposit || 0} deposit` : 'Consumable'}</span>
               </div>
             </div>
           )
@@ -90,9 +146,13 @@ export default function Equipment() {
                       {r.customer.name} · {r.customer.phone}
                     </td>
                     <td className="px-4 py-3 text-slate">{r.qty}</td>
-                    <td className="px-4 py-3 text-slate">{new Date(r.dueBackAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="px-4 py-3 text-slate">
+                      {new Date(r.dueBackAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${r.status === 'maintenance' ? 'bg-flame/15 text-flame' : 'bg-surface-muted text-ink'}`}>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${r.status === 'maintenance' ? 'bg-flame/15 text-flame' : 'bg-surface-muted text-ink'}`}
+                      >
                         {r.status}
                       </span>
                     </td>
@@ -121,7 +181,7 @@ export default function Equipment() {
               {openRentals.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
-                    Nothing checked out right now.
+                    Nothing checked out right now. Gear is issued from Add-ons at checkout.
                   </td>
                 </tr>
               )}
@@ -129,8 +189,6 @@ export default function Equipment() {
           </table>
         </div>
       </div>
-
-      {issuing && <IssueDialog item={issuing} onClose={() => setIssuing(null)} />}
     </div>
   )
 }
