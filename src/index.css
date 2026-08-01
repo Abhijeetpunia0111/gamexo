@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+
+@theme {
+  --font-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-page: #f2f2f2;
+  --color-surface: #fdfdfd;
+  --color-surface-muted: #f7f7f7;
+
+  --color-ink: #1a1a1a;
+  --color-slate: #525866;
+  --color-muted: #8c8c8c;
+
+  --color-border-soft: #e0e0e0;
+  --color-border-card: #e7ebf0;
+  --color-border-input: #e2e4e9;
+
+  --color-lime: #b5e770;
+  --color-lime-ink: #06393c;
+
+  --color-positive: #2d9f75;
+  --color-negative: #ff383c;
+  --color-notify: #f24364;
+
+  --color-bone: #e9e5dc;
+  --color-flame: #f58161;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #invoice-print-area,
+  #invoice-print-area * {
+    visibility: visible;
+  }
+  #invoice-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
