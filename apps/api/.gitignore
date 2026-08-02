@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# The root .gitignore excludes `.env*`, which also swallows the example file.
+# Re-include it: it documents every setting the API reads and contains no secrets,
+# only local-dev placeholders. A rule in a nested .gitignore overrides the parent.
+.env.example

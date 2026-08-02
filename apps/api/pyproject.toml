@@ -1,0 +1,45 @@
+[project]
+name = "gamexo-api"
+version = "0.1.0"
+description = "Multi-tenant backend for gamexo — white-label SaaS for sports academies"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "python-jose[cryptography]>=3.3.0",
+    # The plan called for passlib[bcrypt]; passlib 1.7.4 (2020) cannot initialise its
+    # bcrypt backend against bcrypt >= 5. See app/core/security.py for the detail.
+    # Same algorithm, same $2b$ hash format.
+    "bcrypt>=5.0.0",
+    "email-validator>=2.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]
+
+# This is an application, not a distributable library — nothing to build or install.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# One event loop for the whole session. The SQLAlchemy engine is created at import
+# and its asyncpg connections are bound to the loop that opened them; a fresh loop
+# per test would hand the pool connections belonging to a loop that no longer exists.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

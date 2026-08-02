@@ -1,0 +1,154 @@
+"""FastAPI application factory."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
+
+from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
+
+from app.auth import platform_router
+from app.auth import router as auth_router
+from app.core.config import settings
+from app.core.errors import register_exception_handlers
+from app.db.session import dispose_engine
+from app.modules.academy import router as academy_router
+from app.modules.admin import router as admin_router
+from app.modules.advertising import router as advertising_router
+from app.modules.booking import router as booking_router
+from app.modules.finance import router as finance_router
+from app.modules.reporting import router as reporting_router
+from app.tenancy.deps import TenantCtx
+
+# Importing the model registry populates Base.metadata. Without it, Alembic's
+# autogenerate sees an empty schema.
+from app import models  # noqa: F401
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    await dispose_engine()
+
+
+DESCRIPTION = """
+Multi-tenant backend for **gamexo** — white-label management for sports academies.
+
+### Tenancy
+
+Every request is resolved to exactly one academy before it reaches a handler:
+
+* **Production** — the host subdomain, e.g. `myacademy.gamexo.app`.
+* **Development** — the `X-Tenant-ID` header with a tenant slug or UUID.
+* **Support** — a platform operator token plus `X-Impersonate-Tenant`.
+
+Isolation is enforced twice: the application binds each transaction to a tenant,
+and PostgreSQL row-level security independently refuses to return another academy's
+rows even if a query forgets to filter.
+"""
+
+
+def unique_operation_id(route: APIRoute) -> str:
+    """`academy_listBatches` rather than `list_batches_api_v1_academy_batches_get`.
+
+    FastAPI's default operation id appends the full path and method, which the
+    TypeScript generator turns verbatim into function and type names. Deriving the
+    id from the route's tag and handler name instead gives the frontend readable
+    call sites, and keeps them stable when a path changes.
+    """
+    tag = route.tags[0] if route.tags else "default"
+    head, *rest = route.name.split("_")
+    camel = head + "".join(part.title() for part in rest)
+    return f"{tag}_{camel}"
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        generate_unique_id_function=unique_operation_id,
+        title=settings.project_name,
+        description=DESCRIPTION,
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        # Sorted, explicit tags keep the generated TypeScript client's module
+        # layout stable between regenerations.
+        openapi_tags=[
+            {
+                "name": "academy",
+                "description": "Coaches, programmes, batches, students, sessions and attendance.",
+            },
+            {
+                "name": "admin",
+                "description": "Settings, staff, notifications and the job queue.",
+            },
+            {"name": "advertising", "description": "Ad inventory and campaign contracts."},
+            {"name": "auth", "description": "Academy staff authentication."},
+            {
+                "name": "booking",
+                "description": "Sports, courts, equipment, customers and court bookings.",
+            },
+            {
+                "name": "finance",
+                "description": "Invoices, payments, membership plans and subscriptions.",
+            },
+            {"name": "platform", "description": "Platform operator control plane."},
+            {"name": "reporting", "description": "Dashboard and Reports aggregates."},
+            {"name": "health", "description": "Liveness and tenancy diagnostics."},
+        ],
+    )
+
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            # X-Tenant-ID must be allow-listed explicitly or the browser strips it
+            # from cross-origin requests and every dev call resolves to no tenant.
+            allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Impersonate-Tenant"],
+        )
+
+    register_exception_handlers(app)
+
+    api = APIRouter(prefix=settings.api_v1_prefix)
+    api.include_router(auth_router.router)
+    api.include_router(platform_router.router)
+    api.include_router(booking_router.router)
+    api.include_router(academy_router.router)
+    api.include_router(advertising_router.router)
+    api.include_router(admin_router.router)
+    api.include_router(reporting_router.router)
+    api.include_router(finance_router.router)
+    api.include_router(_health_router())
+    app.include_router(api)
+
+    return app
+
+
+def _health_router() -> APIRouter:
+    router = APIRouter(tags=["health"])
+
+    @router.get("/health", summary="Liveness probe")
+    async def health() -> dict[str, str]:
+        return {"status": "ok", "environment": settings.environment}
+
+    @router.get(
+        "/health/tenant",
+        summary="Which academy did this request resolve to?",
+        description=(
+            "Unauthenticated on purpose: it exercises tenant resolution alone, which "
+            "is the piece you want to check first when a request lands in the wrong "
+            "academy. It reveals nothing beyond the hostname the caller already used."
+        ),
+    )
+    async def tenant_health(tenant: TenantCtx) -> dict[str, Any]:
+        return {"tenant_id": str(tenant.id), "slug": tenant.slug, "resolved_via": tenant.source}
+
+    return router
+
+
+app = create_app()
