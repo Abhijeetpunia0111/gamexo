@@ -1,0 +1,175 @@
+# gamexo API
+
+Multi-tenant backend for gamexo — white-label management for sports academies.
+FastAPI + PostgreSQL, pooled multi-tenancy with Row-Level Security.
+
+Design and the full entity catalog: [`docs/backend/architecture.md`](../../docs/backend/architecture.md).
+
+## Quick start
+
+```bash
+# from the repo root — Postgres + API, migrations and seed run automatically
+docker compose up
+
+open http://localhost:8000/docs
+```
+
+The repo is a turborepo: the frontend is `apps/web`, this API is `apps/api`.
+
+```bash
+# tenant #1 is resolved, no auth needed
+curl -H 'X-Tenant-ID: xcourt' http://localhost:8000/api/v1/health/tenant
+
+# staff login
+curl -H 'X-Tenant-ID: xcourt' -H 'Content-Type: application/json' \
+     -d '{"email":"admin@xcourtsports.com","password":"xcourt-admin-dev"}' \
+     http://localhost:8000/api/v1/auth/login
+```
+
+## Working locally without Docker for the API
+
+```bash
+docker compose up -d postgres      # Postgres on host port 5433
+cd apps/api
+cp .env.example .env
+uv sync
+uv run alembic upgrade head
+uv run python -m app.seed.seed
+uv run uvicorn app.main:app --reload
+```
+
+Host port **5433**, not 5432: a locally installed Postgres bound to `127.0.0.1`
+takes precedence over Docker's `0.0.0.0` bind, and connections silently reach the
+wrong server.
+
+## Tests
+
+```bash
+docker compose up -d postgres
+cd apps/api && uv run pytest
+```
+
+Runs against a separate `gamexo_test` database with the same two-role privilege
+model as production — connecting as an owner or superuser would make every
+isolation assertion pass vacuously.
+
+If `apps/api/.env` is missing, `. ./devenv.sh` exports the same values for one-off
+CLI work (Alembic, the seed, the worker).
+
+`tests/test_tenant_isolation.py` is the file that matters. It attacks each layer
+separately, and several tests use raw SQL specifically so the ORM's own filtering
+is not what saves them. To confirm they are not vacuous:
+
+```bash
+docker compose exec postgres psql -U gamexo_migrator -d gamexo_test \
+  -c "ALTER TABLE app_user DISABLE ROW LEVEL SECURITY;"
+uv run pytest tests/test_tenant_isolation.py   # 8 failures
+docker compose exec postgres psql -U gamexo_migrator -d gamexo_test \
+  -c "ALTER TABLE app_user ENABLE ROW LEVEL SECURITY; ALTER TABLE app_user FORCE ROW LEVEL SECURITY;"
+```
+
+## How tenancy works
+
+Every request resolves to exactly one academy before reaching a handler:
+
+1. **Host subdomain** — `myacademy.gamexo.app` → `myacademy`. The production path.
+2. **`X-Tenant-ID`** — a slug or UUID, for development and API testing. Gated on
+   `ALLOW_TENANT_HEADER`; `core/config.py` refuses to boot a production app with it
+   enabled, because it lets any caller name any academy.
+3. **`X-Impersonate-Tenant`** — support access, honoured only for a fully verified
+   platform-operator token, and audit-logged.
+
+The JWT's `tid` claim is deliberately *not* a resolution source — it is checked
+against the independently resolved tenant. If it were the source, a token minted
+for academy A would resolve to A no matter whose hostname it arrived on, and
+cross-tenant replay would be indistinguishable from normal traffic.
+
+Isolation is then enforced twice:
+
+- **Application** — `db/session.py` stamps `tenant_id` on INSERT and appends a
+  tenant predicate to every ORM SELECT. No endpoint threads `tenant_id` by hand.
+- **PostgreSQL RLS** — every tenant-scoped table has a policy with both `USING` and
+  `WITH CHECK`. A query that forgets its filter returns nothing rather than
+  everything.
+
+Two database roles, and this is the part that is easy to get wrong:
+
+| Role | Used by | Rights |
+|---|---|---|
+| `gamexo_migrator` | Alembic | Owns the schema. DDL. |
+| `gamexo_app` | the API | DML only. `NOSUPERUSER`, `NOBYPASSRLS`, owns nothing. |
+
+Postgres exempts a table's owner from its own policies unless `FORCE ROW LEVEL
+SECURITY` is set, and exempts superusers and `BYPASSRLS` roles unconditionally. If
+the API connected as the owner, the policies would be decorative.
+`test_app_role_cannot_bypass_rls` asserts these properties directly.
+
+## Layout
+
+```
+app/
+  core/          config, security (JWT + bcrypt), error envelope
+  db/            Base, TenantScoped mixin, engines, RLS helpers, tenant-scoped session
+  tenancy/       context, host/header resolution, FastAPI dependencies
+  auth/          login, refresh, me, RBAC guards, platform control plane
+  models/        the registry — a model not imported here gets no table and no policy
+  modules/
+    booking/     sports, courts, equipment, customers, bookings, availability
+    finance/     invoices, per-tenant numbering, payments, memberships
+    academy/     coaches, programmes, batches, students, sessions, attendance
+    advertising/ ad spots and contracts
+    admin/       settings, staff, notifications, channel config, jobs
+    reporting/   the dashboard and Reports aggregates
+  jobs/          worker.py — cron entrypoint over the jobs table
+  seed/          tenant #1 plus representative data
+alembic/         migrations, including the RLS and GRANT statements
+alembic_rls.py   shared RLS/GRANT DDL used by every migration after the first
+scripts/         export_openapi.py
+tests/           163 tests
+```
+
+## Background worker
+
+```bash
+uv run python -m app.jobs.worker              # all active tenants, then exit
+uv run python -m app.jobs.worker --tenant xcourt
+```
+
+Expires lapsed memberships, raises renewal reminders, advances booking states and drains the
+`job` table. Cron-driven rather than a daemon; jobs are claimed with `FOR UPDATE SKIP LOCKED`
+so running several workers is safe if the volume ever justifies it.
+
+## Regenerating the frontend client
+
+```bash
+pnpm --filter figma-make-app run generate:api
+```
+
+Exports the OpenAPI schema straight from the app (no server needed) into
+`apps/web/src/api/` and regenerates the TypeScript types. See that directory's README.
+
+## Adding a model
+
+1. Inherit `TenantScoped` (`app/db/base.py`) — that is what drives automatic
+   `tenant_id` stamping, the read filter, and the RLS coverage check.
+2. Import it in `app/models/__init__.py`.
+3. `uv run alembic revision --autogenerate -m "..."`, then add the RLS block for the
+   new table (use `protect(TABLES)` from `alembic_rls.py`).
+4. Uniqueness is `UNIQUE (tenant_id, <field>)`, never bare. Composite indexes lead
+   with `tenant_id`.
+5. Money is `money()` from `db/types.py` (`NUMERIC(12,2)`), never float. Status enums
+   use `enum_type()`, which stores the enum's *value* so the database, the API and
+   the frontend's literal unions all read the same.
+
+`test_every_business_table_is_tenant_scoped` fails the build if step 1 is skipped.
+
+## Configuration
+
+See [`.env.example`](.env.example) — every variable is documented there. The
+settings model refuses to start a production app that has `ALLOW_TENANT_HEADER`
+on, uses one role for both the app and migrations, or has a JWT secret under 32
+characters.
+
+`DB_POOL_MODE=external_pooler` targets PgBouncer or a Neon pooled endpoint:
+`NullPool` plus a disabled prepared-statement cache. Both are needed in transaction
+pooling mode, and both fail under load rather than at startup.

@@ -1,0 +1,60 @@
+name: gamexo
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      # The superuser exists only to bootstrap the two application roles below.
+      # Neither the API nor Alembic ever connects as it.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gamexo
+      DB_MIGRATOR_USER: gamexo_migrator
+      DB_MIGRATOR_PASSWORD: gamexo_migrator_pw
+      DB_APP_USER: gamexo_app
+      DB_APP_PASSWORD: gamexo_app_pw
+      DB_TEST_DATABASE: gamexo_test
+    ports:
+      # 5433 on the host: 5432 is commonly already taken by a local Postgres
+      # install, and a local instance bound to 127.0.0.1 wins over Docker's
+      # 0.0.0.0 bind — connections silently reach the wrong server.
+      # Inside the compose network the API still talks to postgres:5432.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, on an empty data volume. If you change it, `docker compose down -v` first.
+      - ./apps/api/docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gamexo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: local
+      DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://gamexo_app:gamexo_app_pw@postgres:5432/gamexo
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://gamexo_migrator:gamexo_migrator_pw@postgres:5432/gamexo
+      DB_APP_USER: gamexo_app
+      DB_POOL_MODE: direct
+      TENANT_BASE_DOMAIN: gamexo.app
+      ALLOW_TENANT_HEADER: "true"
+      JWT_SECRET_KEY: dev-only-insecure-secret-change-me-before-anything-real
+      CORS_ORIGINS: '["http://localhost:8443","http://localhost:5173"]'
+      RUN_MIGRATIONS_ON_START: "true"
+      RUN_SEED_ON_START: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  pgdata:
