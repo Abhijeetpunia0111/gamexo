@@ -195,12 +195,18 @@ async def list_equipment(
     params: Params,
     category: str | None = None,
     low_stock_only: bool = False,
+    sport_id: uuid.UUID | None = None,
+    published_to_pos: bool | None = None,
 ) -> Page[EquipmentOut]:
     stmt = select(Equipment).order_by(Equipment.category, Equipment.name)
     if category:
         stmt = stmt.where(Equipment.category == category)
     if low_stock_only:
         stmt = stmt.where(Equipment.qty_available <= Equipment.low_stock_threshold)
+    if sport_id is not None:
+        stmt = stmt.where(Equipment.sport_id == sport_id)
+    if published_to_pos is not None:
+        stmt = stmt.where(Equipment.published_to_pos.is_(published_to_pos))
     return await paginate(db, stmt, params, EquipmentOut)
 
 
@@ -211,6 +217,8 @@ async def list_equipment(
     summary="Add equipment",
 )
 async def create_equipment(payload: EquipmentCreate, db: Db, _: RequireManager) -> EquipmentOut:
+    if payload.sport_id is not None:
+        await get_or_404(db, Sport, payload.sport_id, label="Sport")
     item = Equipment(
         **payload.model_dump(exclude={"qty_stock"}),
         qty_stock=payload.qty_stock,
@@ -226,10 +234,43 @@ async def update_equipment(
     equipment_id: uuid.UUID, payload: EquipmentUpdate, db: Db, _: RequireManager
 ) -> EquipmentOut:
     item = await get_or_404(db, Equipment, equipment_id, label="Equipment")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    if updates.get("sport_id") is not None:
+        await get_or_404(db, Sport, updates["sport_id"], label="Sport")
+    for field, value in updates.items():
         setattr(item, field, value)
     await db.flush()
     return EquipmentOut.model_validate(item)
+
+
+@router.delete(
+    "/equipment/{equipment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete equipment",
+    description=(
+        "Only when nothing references it — a movement history or issued units mean "
+        "this item has a real trail behind it, so archive it (unpublish, zero the "
+        "stock) instead of erasing that trail."
+    ),
+)
+async def delete_equipment(equipment_id: uuid.UUID, db: Db, _: RequireManager) -> None:
+    item = await get_or_404(db, Equipment, equipment_id, label="Equipment")
+    if item.qty_issued > 0:
+        raise ConflictError(
+            f"{item.qty_issued} unit(s) of {item.name} are still issued — take them back first.",
+            details={"equipment_id": str(equipment_id)},
+        )
+    has_movements = (
+        await db.execute(
+            select(EquipmentMovement.id).where(EquipmentMovement.equipment_id == equipment_id).limit(1)
+        )
+    ).first()
+    if has_movements is not None:
+        raise ConflictError(
+            f"{item.name} has movement history and cannot be deleted — unpublish it instead.",
+            details={"equipment_id": str(equipment_id)},
+        )
+    await db.delete(item)
 
 
 @router.post(

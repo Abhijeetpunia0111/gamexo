@@ -148,13 +148,17 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 }
 
 /* ── typed helpers ──────────────────────────────────────────────────────────
- * `Ok<P, M>` pulls the 200 response body for a path+method straight out of the
- * generated schema, so these return types track the backend automatically.
+ * `Ok<P, M, S>` pulls a response body for a path+method+status straight out of
+ * the generated schema, so these return types track the backend automatically.
  */
-type Ok<P extends keyof paths, M extends keyof paths[P]> = paths[P][M] extends {
-  responses: { 200: { content: { 'application/json': infer R } } }
+type Ok<P extends keyof paths, M extends keyof paths[P], S extends number = 200> = paths[P][M] extends {
+  responses: infer R
 }
-  ? R
+  ? S extends keyof R
+    ? R[S] extends { content: { 'application/json': infer J } }
+      ? J
+      : never
+    : never
   : never
 
 export const api = {
@@ -192,6 +196,74 @@ export const api = {
     booking_id?: string
     notes?: string
   }) => request<unknown>('/api/v1/payments', { method: 'POST', body }),
+
+  listEquipment: (query?: {
+    category?: string
+    low_stock_only?: boolean
+    sport_id?: string
+    published_to_pos?: boolean
+    page?: number
+    size?: number
+  }) => request<Ok<'/api/v1/equipment', 'get'>>('/api/v1/equipment', { query }),
+
+  createEquipment: (body: {
+    name: string
+    category: string
+    barcode: string
+    rental_price?: number
+    deposit?: number
+    condition?: 'excellent' | 'good' | 'fair' | 'poor'
+    low_stock_threshold?: number
+    sport_id?: string | null
+    published_to_pos?: boolean
+    image_url?: string | null
+    consumable?: boolean
+    qty_stock?: number
+  }) =>
+    request<Ok<'/api/v1/equipment', 'post', 201>>('/api/v1/equipment', { method: 'POST', body }),
+
+  updateEquipment: (
+    equipmentId: string,
+    body: Partial<{
+      name: string
+      category: string
+      rental_price: number
+      deposit: number
+      condition: 'excellent' | 'good' | 'fair' | 'poor'
+      low_stock_threshold: number
+      sport_id: string | null
+      published_to_pos: boolean
+      image_url: string | null
+      consumable: boolean
+    }>,
+  ) =>
+    request<Ok<'/api/v1/equipment/{equipment_id}', 'patch'>>(`/api/v1/equipment/${equipmentId}`, {
+      method: 'PATCH',
+      body,
+    }),
+
+  deleteEquipment: (equipmentId: string) =>
+    request<void>(`/api/v1/equipment/${equipmentId}`, { method: 'DELETE' }),
+
+  createMovement: (
+    equipmentId: string,
+    body: {
+      kind: 'issue' | 'return' | 'to_maintenance' | 'from_maintenance' | 'lost' | 'restock' | 'adjust' | 'write_off'
+      qty: number
+      booking_id?: string
+      note?: string
+    },
+  ) =>
+    request<Ok<'/api/v1/equipment/{equipment_id}/movements', 'post', 201>>(
+      `/api/v1/equipment/${equipmentId}/movements`,
+      { method: 'POST', body },
+    ),
+
+  listMovements: (equipmentId: string, query?: { page?: number; size?: number }) =>
+    request<Ok<'/api/v1/equipment/{equipment_id}/movements', 'get'>>(
+      `/api/v1/equipment/${equipmentId}/movements`,
+      { query },
+    ),
 }
 
 export { request, BASE_URL, TENANT }

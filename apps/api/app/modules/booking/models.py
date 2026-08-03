@@ -83,6 +83,7 @@ class MovementKind(StrEnum):
     LOST = "lost"
     RESTOCK = "restock"
     ADJUST = "adjust"
+    WRITE_OFF = "write_off"
 
 
 class BookingEventKind(StrEnum):
@@ -176,12 +177,18 @@ class Equipment(TenantScoped):
     truth. They are maintained in the same transaction as the movement that changes
     them, and the CHECK below means any drift is a constraint violation at write
     time rather than a silent inventory discrepancy discovered at stocktake.
+
+    `published_to_pos` is the line between back-office Inventory and what a walk-in
+    customer actually sees at the counter — an item can exist, be tracked and be
+    restocked here for a while before anyone decides to sell it. `sport_id` is
+    nullable: general kit (towels, water) has no sport of its own.
     """
 
     __tablename__ = "equipment"
     __table_args__ = (
         Index("uq_equipment_tenant_barcode", "tenant_id", "barcode", unique=True),
         Index("ix_equipment_tenant_category", "tenant_id", "category"),
+        Index("ix_equipment_tenant_sport", "tenant_id", "sport_id"),
         CheckConstraint(
             "qty_available + qty_issued + qty_maintenance + qty_lost = qty_stock",
             name="quantities_balance",
@@ -210,6 +217,19 @@ class Equipment(TenantScoped):
     qty_lost: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     low_stock_threshold: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+
+    sport_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("sport.id", ondelete="SET NULL")
+    )
+    published_to_pos: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(Text)
+    # A consumable is sold and gone (a ball, a shuttlecock); the alternative is kit
+    # that leaves and comes back (a bat, a locker key) via issue/return movements
+    # and a deposit. This is a POS/UI hint, not an enforcement — either kind can
+    # still have any movement recorded against it.
+    consumable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    sport: Mapped[Sport | None] = relationship()
 
     def __repr__(self) -> str:
         return f"<Equipment {self.name} {self.qty_available}/{self.qty_stock}>"

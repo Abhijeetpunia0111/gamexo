@@ -117,6 +117,8 @@ typing-inspection==0.4.2
     #   fastapi
     #   pydantic
     #   pydantic-settings
+tzdata==2026.3 ; sys_platform == 'win32'
+    # via gamexo-api
 uvicorn==0.52.0
     # via gamexo-api
 uvloop==0.22.1 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'

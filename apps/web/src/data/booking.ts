@@ -85,6 +85,12 @@ export type Equipment = {
   deposit?: number
 }
 
+/** Seed data — shown only until the real, published Inventory catalogue loads and
+ *  overwrites these contents in place (see `setEquipmentCatalog` and
+ *  `inventory/PublishedEquipmentBridge.tsx`). Every shop-facing screen (Add-ons,
+ *  the walk-in booking flow, Active Courts' kit panel) reads through functions
+ *  further down this file, never this array directly, so the swap is invisible
+ *  to them. */
 export const EQUIPMENT: Equipment[] = [
   { id: 'shoes', name: 'Studs / Shoes', price: 120, sports: ['football', 'cricket'], hint: 'Sizes 5–12', stock: 24, returnable: true, deposit: 300 },
   { id: 'football', name: 'Football', price: 250, sports: ['football'], hint: 'Size 5, match ball', stock: 12, returnable: false },
@@ -99,6 +105,14 @@ export const EQUIPMENT: Equipment[] = [
   { id: 'bottle', name: 'Water Bottle', price: 20, sports: [], hint: '1 litre, chilled', stock: 100, returnable: false },
   { id: 'locker', name: 'Locker', price: 50, sports: [], hint: 'For the full slot', stock: 30, returnable: true, deposit: 200 },
 ]
+
+/** Repoints the shared catalogue at what Inventory has actually published, in
+ *  place, so every existing reader (`equipmentForSport`, `priceEquipment`, the
+ *  Active Courts kit panel, ...) picks it up without a single call site changing. */
+export function setEquipmentCatalog(items: Equipment[]) {
+  EQUIPMENT.length = 0
+  EQUIPMENT.push(...items)
+}
 
 export const equipmentById = (id: string) => EQUIPMENT.find((e) => e.id === id)
 
@@ -261,8 +275,11 @@ export function equipmentLines(equipment: Record<string, number>) {
   return Object.entries(equipment)
     .filter(([, qty]) => qty > 0)
     .map(([id, qty]) => {
-      const item = EQUIPMENT.find((e) => e.id === id)!
-      return { id, name: item.name, qty, amount: item.price * qty }
+      // The catalogue is live now (see setEquipmentCatalog) — an older booking can
+      // reference an id that's since been unpublished or removed. Show it as a
+      // priceless line rather than crashing the screen it's rendered on.
+      const item = EQUIPMENT.find((e) => e.id === id)
+      return { id, name: item?.name ?? 'Removed item', qty, amount: (item?.price ?? 0) * qty }
     })
 }
 

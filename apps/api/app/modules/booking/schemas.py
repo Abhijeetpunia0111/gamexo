@@ -149,6 +149,10 @@ class EquipmentBase(BaseModel):
     deposit: Decimal = Field(default=Decimal("0"), ge=0)
     condition: EquipmentCondition = EquipmentCondition.GOOD
     low_stock_threshold: int = Field(default=3, ge=0)
+    sport_id: uuid.UUID | None = None
+    published_to_pos: bool = True
+    image_url: str | None = None
+    consumable: bool = True
 
 
 class EquipmentCreate(EquipmentBase):
@@ -163,6 +167,10 @@ class EquipmentUpdate(BaseModel):
     deposit: Decimal | None = Field(default=None, ge=0)
     condition: EquipmentCondition | None = None
     low_stock_threshold: int | None = Field(default=None, ge=0)
+    sport_id: uuid.UUID | None = None
+    published_to_pos: bool | None = None
+    image_url: str | None = None
+    consumable: bool | None = None
 
 
 class EquipmentOut(EquipmentBase):

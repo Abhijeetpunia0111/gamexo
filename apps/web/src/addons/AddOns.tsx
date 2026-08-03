@@ -185,7 +185,8 @@ export default function AddOns() {
         <div className="flex w-full shrink-0 items-center gap-4 border-t border-border-soft bg-white px-4 py-3 sm:px-6">
           <div className="flex flex-1 items-center gap-2 overflow-x-auto">
             {trayItems.map(([id, qty]) => {
-              const item = EQUIPMENT.find((e) => e.id === id)!
+              const item = EQUIPMENT.find((e) => e.id === id)
+              if (!item) return null
               return (
                 <span
                   key={id}

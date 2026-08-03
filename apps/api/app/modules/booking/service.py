@@ -202,6 +202,17 @@ async def apply_movement(
     elif kind is MovementKind.ADJUST:
         equipment.qty_stock += qty
         equipment.qty_available += qty
+    elif kind is MovementKind.WRITE_OFF:
+        # Stock removed straight off the shelf — damage found on a stocktake,
+        # a manual correction, anything that never went out issued to begin
+        # with. The inverse of RESTOCK: both counters drop together.
+        if equipment.qty_available < qty:
+            raise ConflictError(
+                f"Only {equipment.qty_available} unit(s) of {equipment.name} are available to write off.",
+                details={"equipment_id": str(equipment.id), "requested": qty},
+            )
+        equipment.qty_stock -= qty
+        equipment.qty_available -= qty
     else:
         source, target = transitions[kind]
         if getattr(equipment, source) < qty:

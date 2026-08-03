@@ -47,7 +47,7 @@ services:
       TENANT_BASE_DOMAIN: gamexo.app
       ALLOW_TENANT_HEADER: "true"
       JWT_SECRET_KEY: dev-only-insecure-secret-change-me-before-anything-real
-      CORS_ORIGINS: '["http://localhost:8443","http://localhost:5173"]'
+      CORS_ORIGINS: '["http://localhost:8443","http://localhost:5173","http://localhost:5174"]'
       RUN_MIGRATIONS_ON_START: "true"
       RUN_SEED_ON_START: "true"
     ports:

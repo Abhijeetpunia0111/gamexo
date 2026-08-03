@@ -22,6 +22,9 @@ import tableTennis from '../assets/figma/sports/table-tennis.png'
 type SportOut = components['schemas']['SportOut']
 type CourtWithStatus = components['schemas']['CourtWithStatus']
 type BookingOut = components['schemas']['BookingOut']
+type EquipmentOut = components['schemas']['EquipmentOut']
+export type MovementOut = components['schemas']['MovementOut']
+export type MovementKind = MovementOut['kind']
 
 /**
  * The API has no sport imagery — it carries `icon`/`color`, while the UI is built
@@ -121,10 +124,68 @@ export function toBooking(b: BookingOut): Booking {
   }
 }
 
+/** Back-office Inventory — distinct from `Equipment` in data/booking.ts, which is
+ *  the static mock catalogue the (still localStorage-backed) booking flow and its
+ *  own Add-ons screen read from. This is the real, API-backed model that the
+ *  Inventory page and the standalone POS app both read and write. */
+export type InventoryItem = {
+  id: string
+  name: string
+  category: string
+  barcode: string
+  price: number
+  deposit: number
+  condition: 'excellent' | 'good' | 'fair' | 'poor'
+  lowStockThreshold: number
+  sportId: string | null
+  publishedToPos: boolean
+  imageUrl: string | null
+  consumable: boolean
+  qtyStock: number
+  qtyAvailable: number
+  qtyIssued: number
+  qtyMaintenance: number
+  qtyLost: number
+  isLowStock: boolean
+}
+
+export function toInventoryItem(e: EquipmentOut): InventoryItem {
+  return {
+    id: e.id,
+    name: e.name,
+    category: e.category,
+    barcode: e.barcode,
+    price: money(e.rental_price),
+    deposit: money(e.deposit),
+    condition: e.condition ?? 'good',
+    lowStockThreshold: e.low_stock_threshold ?? 3,
+    sportId: e.sport_id ?? null,
+    publishedToPos: e.published_to_pos ?? false,
+    imageUrl: e.image_url ?? null,
+    consumable: e.consumable ?? true,
+    qtyStock: e.qty_stock,
+    qtyAvailable: e.qty_available,
+    qtyIssued: e.qty_issued,
+    qtyMaintenance: e.qty_maintenance,
+    qtyLost: e.qty_lost,
+    isLowStock: e.is_low_stock ?? false,
+  }
+}
+
+export type StockStatus = 'in-stock' | 'low-stock' | 'out-of-stock'
+
+export function stockStatus(item: Pick<InventoryItem, 'qtyAvailable' | 'isLowStock'>): StockStatus {
+  if (item.qtyAvailable <= 0) return 'out-of-stock'
+  if (item.isLowStock) return 'low-stock'
+  return 'in-stock'
+}
+
 export const queryKeys = {
   sports: ['sports'] as const,
   courts: (sportId?: string) => ['courts', sportId ?? 'all'] as const,
   bookings: (page: number) => ['bookings', page] as const,
+  inventory: ['inventory'] as const,
+  movements: (equipmentId: string) => ['movements', equipmentId] as const,
 }
 
 /** Sports, with each one's court count folded in for the "N Courts" label. */
@@ -172,5 +233,131 @@ export function useRecordPayment() {
     mutationFn: (vars: { bookingId: string; amount: number; method: 'cash' | 'upi' | 'card' | 'bank' | 'cheque' }) =>
       api.recordPayment({ booking_id: vars.bookingId, amount: vars.amount, method: vars.method }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bookings'] }),
+  })
+}
+
+/** The whole catalogue in one page — inventories for a single venue run to the tens
+ *  or low hundreds, so search/price-range filtering happens client-side on this. */
+export function useInventory() {
+  return useQuery({
+    queryKey: queryKeys.inventory,
+    // 200 is the API's hard ceiling on page size (see Params in api_utils.py).
+    queryFn: async () => (await api.listEquipment({ size: 200 })).items.map(toInventoryItem),
+  })
+}
+
+function invalidateInventory(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: queryKeys.inventory })
+}
+
+export function useCreateInventoryItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      name: string
+      category: string
+      barcode: string
+      price: number
+      deposit: number
+      condition: InventoryItem['condition']
+      lowStockThreshold: number
+      sportId: string | null
+      publishedToPos: boolean
+      imageUrl: string | null
+      consumable: boolean
+      qtyStock: number
+    }) =>
+      api.createEquipment({
+        name: vars.name,
+        category: vars.category,
+        barcode: vars.barcode,
+        rental_price: vars.price,
+        deposit: vars.deposit,
+        condition: vars.condition,
+        low_stock_threshold: vars.lowStockThreshold,
+        sport_id: vars.sportId,
+        published_to_pos: vars.publishedToPos,
+        image_url: vars.imageUrl,
+        consumable: vars.consumable,
+        qty_stock: vars.qtyStock,
+      }),
+    onSuccess: () => invalidateInventory(qc),
+  })
+}
+
+export function useUpdateInventoryItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      id: string
+      patch: Partial<{
+        name: string
+        category: string
+        price: number
+        deposit: number
+        condition: InventoryItem['condition']
+        lowStockThreshold: number
+        sportId: string | null
+        publishedToPos: boolean
+        imageUrl: string | null
+        consumable: boolean
+      }>
+    }) =>
+      api.updateEquipment(vars.id, {
+        name: vars.patch.name,
+        category: vars.patch.category,
+        rental_price: vars.patch.price,
+        deposit: vars.patch.deposit,
+        condition: vars.patch.condition,
+        low_stock_threshold: vars.patch.lowStockThreshold,
+        sport_id: vars.patch.sportId,
+        published_to_pos: vars.patch.publishedToPos,
+        image_url: vars.patch.imageUrl,
+        consumable: vars.patch.consumable,
+      }),
+    // Flip the row in the cache immediately — the toggle shouldn't wait on a
+    // network round trip (or the 200-item refetch below) to visibly respond.
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: queryKeys.inventory })
+      const previous = qc.getQueryData<InventoryItem[]>(queryKeys.inventory)
+      qc.setQueryData<InventoryItem[]>(queryKeys.inventory, (items) =>
+        items?.map((item) => (item.id === vars.id ? { ...item, ...vars.patch } : item)),
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(queryKeys.inventory, context.previous)
+    },
+    onSettled: () => invalidateInventory(qc),
+  })
+}
+
+export function useDeleteInventoryItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteEquipment(id),
+    onSuccess: () => invalidateInventory(qc),
+  })
+}
+
+/** Restock/write-off/correction — one ledger entry that also moves the counters,
+ *  in the same transaction, server-side. */
+export function useCreateMovement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { equipmentId: string; kind: MovementKind; qty: number; note?: string }) =>
+      api.createMovement(vars.equipmentId, { kind: vars.kind, qty: vars.qty, note: vars.note }),
+    onSuccess: (_data, vars) => {
+      invalidateInventory(qc)
+      qc.invalidateQueries({ queryKey: queryKeys.movements(vars.equipmentId) })
+    },
+  })
+}
+
+export function useMovementHistory(equipmentId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.movements(equipmentId ?? ''),
+    queryFn: async () => (await api.listMovements(equipmentId!, { size: 20 })).items,
+    enabled: !!equipmentId,
   })
 }

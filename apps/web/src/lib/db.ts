@@ -38,6 +38,13 @@ export function subscribe(fn: () => void) {
   }
 }
 
+/** Nudges every `useDbVersion()` subscriber to re-render without an actual
+ *  localStorage write — used when something outside this module (the published
+ *  equipment catalogue, synced from the API) changes in place. */
+export function notifyChanged() {
+  emit()
+}
+
 /* ---------- bookings ---------- */
 
 export const getBookings = () => read<Booking[]>('bookings', [])

@@ -17,7 +17,8 @@ import Invoices from './manage/Invoices'
 import Coupons from './manage/Coupons'
 import Members from './members/Members'
 import Academy from './academy/Academy'
-import Equipment from './equipment/Equipment'
+import Inventory from './inventory/Inventory'
+import PublishedEquipmentBridge from './inventory/PublishedEquipmentBridge'
 import { demoBookings } from './data/booking'
 import * as db from './lib/db'
 import { useAuth } from './auth/AuthProvider'
@@ -94,6 +95,7 @@ function Shell() {
 
   return (
     <div className="flex h-screen w-full items-stretch overflow-hidden bg-page">
+      <PublishedEquipmentBridge />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} view={view} onNavigate={navigate} />
 
       <div className="flex h-screen flex-1 flex-col overflow-hidden border-l border-[#ebf0f4]">
@@ -148,7 +150,7 @@ function Shell() {
         {view === 'equipment' && (
           <>
             <Header onMenuClick={() => setSidebarOpen(true)} title="Inventory" icon={packageDelivered} dateIcon={calendar05} />
-            <Equipment />
+            <Inventory />
           </>
         )}
         {view === 'manageCourts' && (

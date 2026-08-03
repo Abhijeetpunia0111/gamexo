@@ -4605,6 +4605,11 @@
             "$ref": "#/components/schemas/EquipmentCondition",
             "default": "good"
           },
+          "consumable": {
+            "default": true,
+            "title": "Consumable",
+            "type": "boolean"
+          },
           "deposit": {
             "anyOf": [
               {
@@ -4619,6 +4624,17 @@
             "default": "0",
             "title": "Deposit"
           },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
           "low_stock_threshold": {
             "default": 3,
             "minimum": 0.0,
@@ -4630,6 +4646,11 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "published_to_pos": {
+            "default": false,
+            "title": "Published To Pos",
+            "type": "boolean"
           },
           "qty_stock": {
             "default": 0,
@@ -4651,6 +4672,18 @@
             ],
             "default": "0",
             "title": "Rental Price"
+          },
+          "sport_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Id"
           }
         },
         "required": [
@@ -4701,6 +4734,11 @@
             "$ref": "#/components/schemas/EquipmentCondition",
             "default": "good"
           },
+          "consumable": {
+            "default": true,
+            "title": "Consumable",
+            "type": "boolean"
+          },
           "deposit": {
             "default": "0",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -4711,6 +4749,17 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
           },
           "is_low_stock": {
             "default": false,
@@ -4728,6 +4777,11 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "published_to_pos": {
+            "default": false,
+            "title": "Published To Pos",
+            "type": "boolean"
           },
           "qty_available": {
             "title": "Qty Available",
@@ -4754,6 +4808,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rental Price",
             "type": "string"
+          },
+          "sport_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Id"
           }
         },
         "required": [
@@ -4814,6 +4880,17 @@
               }
             ]
           },
+          "consumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumable"
+          },
           "deposit": {
             "anyOf": [
               {
@@ -4829,6 +4906,17 @@
               }
             ],
             "title": "Deposit"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
           },
           "low_stock_threshold": {
             "anyOf": [
@@ -4855,6 +4943,17 @@
             ],
             "title": "Name"
           },
+          "published_to_pos": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published To Pos"
+          },
           "rental_price": {
             "anyOf": [
               {
@@ -4870,6 +4969,18 @@
               }
             ],
             "title": "Rental Price"
+          },
+          "sport_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Id"
           }
         },
         "title": "EquipmentUpdate",
@@ -6199,7 +6310,8 @@
           "from_maintenance",
           "lost",
           "restock",
-          "adjust"
+          "adjust",
+          "write_off"
         ],
         "title": "MovementKind",
         "type": "string"
@@ -13502,6 +13614,39 @@
             }
           },
           {
+            "in": "query",
+            "name": "sport_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sport Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "published_to_pos",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Published To Pos"
+            }
+          },
+          {
             "description": "1-indexed page number",
             "in": "query",
             "name": "page",
@@ -13607,6 +13752,46 @@
       }
     },
     "/api/v1/equipment/{equipment_id}": {
+      "delete": {
+        "description": "Only when nothing references it \u2014 a movement history or issued units mean this item has a real trail behind it, so archive it (unpublish, zero the stock) instead of erasing that trail.",
+        "operationId": "booking_deleteEquipment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "equipment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Equipment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete equipment",
+        "tags": [
+          "booking"
+        ]
+      },
       "patch": {
         "operationId": "booking_updateEquipment",
         "parameters": [

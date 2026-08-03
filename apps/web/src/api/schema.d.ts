@@ -719,7 +719,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete equipment
+         * @description Only when nothing references it — a movement history or issued units mean this item has a real trail behind it, so archive it (unpublish, zero the stock) instead of erasing that trail.
+         */
+        delete: operations["booking_deleteEquipment"];
         options?: never;
         head?: never;
         /** Update equipment */
@@ -2893,10 +2897,17 @@ export interface components {
             /** @default good */
             condition?: components["schemas"]["EquipmentCondition"];
             /**
+             * Consumable
+             * @default true
+             */
+            consumable?: boolean;
+            /**
              * Deposit
              * @default 0
              */
             deposit?: number | string;
+            /** Image Url */
+            image_url?: string | null;
             /**
              * Low Stock Threshold
              * @default 3
@@ -2904,6 +2915,11 @@ export interface components {
             low_stock_threshold?: number;
             /** Name */
             name: string;
+            /**
+             * Published To Pos
+             * @default false
+             */
+            published_to_pos?: boolean;
             /**
              * Qty Stock
              * @description All units start as available
@@ -2915,6 +2931,8 @@ export interface components {
              * @default 0
              */
             rental_price?: number | string;
+            /** Sport Id */
+            sport_id?: string | null;
         };
         /** EquipmentLineOut */
         EquipmentLineOut: {
@@ -2934,6 +2952,11 @@ export interface components {
             /** @default good */
             condition?: components["schemas"]["EquipmentCondition"];
             /**
+             * Consumable
+             * @default true
+             */
+            consumable?: boolean;
+            /**
              * Deposit
              * @default 0
              */
@@ -2943,6 +2966,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Image Url */
+            image_url?: string | null;
             /**
              * Is Low Stock
              * @default false
@@ -2955,6 +2980,11 @@ export interface components {
             low_stock_threshold?: number;
             /** Name */
             name: string;
+            /**
+             * Published To Pos
+             * @default false
+             */
+            published_to_pos?: boolean;
             /** Qty Available */
             qty_available: number;
             /** Qty Issued */
@@ -2970,6 +3000,8 @@ export interface components {
              * @default 0
              */
             rental_price?: string;
+            /** Sport Id */
+            sport_id?: string | null;
         };
         /** EquipmentSelection */
         EquipmentSelection: {
@@ -2986,14 +3018,22 @@ export interface components {
             /** Category */
             category?: string | null;
             condition?: components["schemas"]["EquipmentCondition"] | null;
+            /** Consumable */
+            consumable?: boolean | null;
             /** Deposit */
             deposit?: number | string | null;
+            /** Image Url */
+            image_url?: string | null;
             /** Low Stock Threshold */
             low_stock_threshold?: number | null;
             /** Name */
             name?: string | null;
+            /** Published To Pos */
+            published_to_pos?: boolean | null;
             /** Rental Price */
             rental_price?: number | string | null;
+            /** Sport Id */
+            sport_id?: string | null;
         };
         /** FeeCollection */
         FeeCollection: {
@@ -3418,7 +3458,7 @@ export interface components {
          * @description Every way equipment changes state. The ledger the counters derive from.
          * @enum {string}
          */
-        MovementKind: "issue" | "return" | "to_maintenance" | "from_maintenance" | "lost" | "restock" | "adjust";
+        MovementKind: "issue" | "return" | "to_maintenance" | "from_maintenance" | "lost" | "restock" | "adjust" | "write_off";
         /** MovementOut */
         MovementOut: {
             /** Booking Id */
@@ -6425,6 +6465,8 @@ export interface operations {
             query?: {
                 category?: string | null;
                 low_stock_only?: boolean;
+                sport_id?: string | null;
+                published_to_pos?: boolean | null;
                 /** @description 1-indexed page number */
                 page?: number;
                 /** @description Items per page */
@@ -6477,6 +6519,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EquipmentOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    booking_deleteEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                equipment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
