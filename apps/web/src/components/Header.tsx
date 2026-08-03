@@ -1,10 +1,10 @@
 import { Menu } from 'lucide-react'
+import HeaderSearch from './HeaderSearch'
+import type { View } from '../App'
 
 import dashboardSquareHeader from '../assets/figma/dashboard-square-header.svg'
-import search from '../assets/figma/search.svg'
 import bell from '../assets/figma/bell.svg'
 import calendarPlus from '../assets/figma/calendar-plus.svg'
-import userPlus from '../assets/figma/user-plus.svg'
 
 const today = new Date().toLocaleDateString('en-US', {
   day: '2-digit',
@@ -14,11 +14,13 @@ const today = new Date().toLocaleDateString('en-US', {
 
 export default function Header({
   onMenuClick,
+  onNavigate,
   title = 'Dashboard',
   icon = dashboardSquareHeader,
   dateIcon = calendarPlus,
 }: {
   onMenuClick: () => void
+  onNavigate: (view: View) => void
   title?: string
   icon?: string
   dateIcon?: string
@@ -39,21 +41,7 @@ export default function Header({
         <p className="flex-1 truncate text-xl font-medium text-ink">{title}</p>
       </div>
 
-      <button
-        type="button"
-        className="hidden h-9 items-center gap-2.5 rounded-lg border border-border-input bg-white px-3.5 py-2.5 shadow-[0px_1px_2px_0px_rgba(82,88,102,0.09)] sm:flex sm:max-w-[420px] sm:flex-1"
-      >
-        <img src={search} alt="" className="size-[18px] shrink-0" />
-        <span className="truncate text-left text-sm text-muted">Search Anything...</span>
-      </button>
-
-      <button
-        type="button"
-        aria-label="Search"
-        className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border-input bg-white sm:hidden"
-      >
-        <img src={search} alt="" className="size-[18px]" />
-      </button>
+      <HeaderSearch onNavigate={onNavigate} />
 
       <button
         type="button"
@@ -69,20 +57,6 @@ export default function Header({
       >
         <span className="whitespace-nowrap text-sm text-ink">{today}</span>
         <img src={dateIcon} alt="" className="size-[18px]" />
-      </button>
-
-      <button
-        type="button"
-        className="flex h-9 shrink-0 items-center justify-end gap-2 rounded-lg px-3 shadow-[0px_4px_10px_0px_rgba(0,0,0,0.05),0px_10px_120px_0px_rgba(15,73,106,0.1)] sm:gap-3 sm:px-3.5"
-        style={{
-          backgroundImage:
-            'linear-gradient(106.6deg, rgb(41, 41, 41) 2.09%, rgb(26, 26, 26) 100%)',
-        }}
-      >
-        <img src={userPlus} alt="" className="h-[17px] w-auto" />
-        <span className="hidden whitespace-nowrap text-sm font-medium text-white sm:inline">
-          New Walk-in
-        </span>
       </button>
     </header>
   )

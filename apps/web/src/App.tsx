@@ -25,11 +25,11 @@ import { useAuth } from './auth/AuthProvider'
 import LoginPage from './auth/LoginPage'
 import dashboardSquareHeader from './assets/figma/dashboard-square-header.svg'
 import bolt from './assets/figma/bolt.svg'
-import calendar05 from './assets/figma/calendar-05.svg'
+import calendar from './assets/figma/calendar.svg'
 import shoppingCartAdd from './assets/figma/shopping-cart-add.svg'
 import dices from './assets/figma/dices.svg'
 import storeManagement from './assets/figma/store-management.svg'
-import userPlus from './assets/figma/user-plus.svg'
+import userPlusDark from './assets/figma/user-plus-dark.svg'
 import mortarboard from './assets/figma/mortarboard.svg'
 import packageDelivered from './assets/figma/package-delivered.svg'
 import helpSquareRounded from './assets/figma/help-square-rounded.svg'
@@ -101,13 +101,13 @@ function Shell() {
       <div className="flex h-screen flex-1 flex-col overflow-hidden border-l border-[#ebf0f4]">
         {view === 'dashboard' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Dashboard" icon={dashboardSquareHeader} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Dashboard" icon={dashboardSquareHeader} />
             <Dashboard />
           </>
         )}
         {view === 'booking' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="New Booking" icon={bolt} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="New Booking" icon={bolt} />
             <BookingFlow
               initialCourtId={prefillCourtId ?? undefined}
               onDone={() => {
@@ -119,115 +119,115 @@ function Shell() {
         )}
         {view === 'addons' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Add-ons" icon={shoppingCartAdd} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Add-ons" icon={shoppingCartAdd} />
             <AddOns />
           </>
         )}
         {view === 'bookings' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Bookings" icon={calendar05} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Bookings" icon={calendar} />
             <BookingsPage />
           </>
         )}
         {view === 'activeCourts' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Active Courts" icon={dices} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Active Courts" icon={dices} />
             <ActiveGames onStartBooking={startBookingForCourt} />
           </>
         )}
         {view === 'members' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Members" icon={userPlus} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Members" icon={userPlusDark} />
             <Members />
           </>
         )}
         {view === 'academy' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Academy" icon={mortarboard} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Academy" icon={mortarboard} />
             <Academy />
           </>
         )}
         {view === 'equipment' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Inventory" icon={packageDelivered} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Inventory" icon={packageDelivered} />
             <Inventory />
           </>
         )}
         {view === 'manageCourts' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Courts Overview" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Courts Overview" icon={storeManagement} />
             <CourtsOverview onStartBooking={() => navigate('booking')} />
           </>
         )}
         {view === 'manageCoaches' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Coaches" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Coaches" icon={storeManagement} />
             <Coaches />
           </>
         )}
         {view === 'manageUsers' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Users" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Users" icon={storeManagement} />
             <Users />
           </>
         )}
         {view === 'manageMembership' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Membership" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Membership" icon={storeManagement} />
             <Membership />
           </>
         )}
         {view === 'manageInvoices' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Invoices" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Invoices" icon={storeManagement} />
             <Invoices />
           </>
         )}
         {view === 'manageCoupons' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Discount Coupons" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Discount Coupons" icon={storeManagement} />
             <Coupons />
           </>
         )}
         {view === 'managePaymentModes' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Payment Modes" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Payment Modes" icon={storeManagement} />
             <PaymentModes />
           </>
         )}
         {view === 'manageNotifications' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Notification Settings" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Notification Settings" icon={storeManagement} />
             <NotificationSettings />
           </>
         )}
         {view === 'sales' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Sales" icon={shoppingCartAdd} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Sales" icon={shoppingCartAdd} />
             <ComingSoon label="Sales" />
           </>
         )}
         {view === 'events' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Events" icon={olympicTorch} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Events" icon={olympicTorch} />
             <ComingSoon label="Events" />
           </>
         )}
         {view === 'settings' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Settings" icon={settings} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Settings" icon={settings} />
             <ComingSoon label="Settings" />
           </>
         )}
         {view === 'helpCenter' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Help Center" icon={helpSquareRounded} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Help Center" icon={helpSquareRounded} />
             <ComingSoon label="Help Center" />
           </>
         )}
         {view === 'manageStaff' && (
           <>
-            <Header onMenuClick={() => setSidebarOpen(true)} title="Manage Staff" icon={storeManagement} dateIcon={calendar05} />
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Manage Staff" icon={storeManagement} />
             <StaffManagement />
           </>
         )}
