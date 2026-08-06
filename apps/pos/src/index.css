@@ -1,14 +1,13 @@
 @import "tailwindcss";
 
-@import "@fontsource/geist-sans/400.css";
-@import "@fontsource/geist-sans/500.css";
-@import "@fontsource/geist-sans/600.css";
-@import "@fontsource/plus-jakarta-sans/600.css";
-@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/500.css";
+@import "@fontsource/manrope/600.css";
+@import "@fontsource/manrope/700.css";
 
 @theme {
-  --font-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
 
   --color-page: #f2f2f2;
   --color-surface: #fdfdfd;
@@ -64,6 +63,42 @@ body {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Check-in result screen: fills a button left-to-right at a constant rate,
+   independent of React re-renders — a JS-driven percentage would step once per
+   tick instead of gliding. */
+@keyframes fill-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Success reveal: the graphic panel slides into its resting slot first... */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(-2.5rem);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ...then the booking details fade in a beat later (see animation-delay at the call site). */
+@keyframes fade-in-up {
+  from {
+    transform: translateY(0.5rem);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @media print {

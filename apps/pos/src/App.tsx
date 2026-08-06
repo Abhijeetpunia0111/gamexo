@@ -1,0 +1,43 @@
+import { useState } from 'react'
+import Home from './home/Home'
+import BookingFlow from './booking/BookingFlow'
+import StorePage from './store/StorePage'
+import CheckInFlow from './checkin/CheckInFlow'
+import CheckoutFlow from './checkout/CheckoutFlow'
+import AcademyPlaceholder from './academy/AcademyPlaceholder'
+import { useAuth } from './auth/AuthProvider'
+import LoginPage from './auth/LoginPage'
+
+export type View = 'home' | 'booking' | 'store' | 'checkin' | 'academy' | 'checkout'
+
+function App() {
+  const { status } = useAuth()
+
+  if (status === 'checking') {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-page text-sm text-slate">Loading…</div>
+    )
+  }
+  if (status === 'anonymous') return <LoginPage />
+
+  return <Shell />
+}
+
+function Shell() {
+  const [view, setView] = useState<View>('home')
+
+  return (
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-page">
+      {view === 'home' && <Home onNavigate={setView} />}
+      {view === 'checkin' && (
+        <CheckInFlow onHome={() => setView('home')} onBookNow={() => setView('booking')} onStore={() => setView('store')} />
+      )}
+      {view === 'academy' && <AcademyPlaceholder onHome={() => setView('home')} />}
+      {view === 'booking' && <BookingFlow onDone={() => setView('home')} />}
+      {view === 'store' && <StorePage onHome={() => setView('home')} />}
+      {view === 'checkout' && <CheckoutFlow onHome={() => setView('home')} />}
+    </div>
+  )
+}
+
+export default App
