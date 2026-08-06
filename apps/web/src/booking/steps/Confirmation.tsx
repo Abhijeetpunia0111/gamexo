@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Download, Mail, MessageCircle, Printer, RotateCcw, Send } from 'lucide-react'
 import type { Draft } from '../../data/booking'
+import type { BookingQuote } from '../../api/hooks'
 import { buildInvoice, invoiceSummaryText } from '../invoice'
 import { downloadInvoicePdf } from '../../lib/invoicePdf'
 import { shareOnWhatsApp } from '../../lib/share'
@@ -30,15 +31,17 @@ function ActionButton({
 export default function Confirmation({
   draft,
   bookingId,
+  quote,
   onDone,
   onBookAnother,
 }: {
   draft: Draft
   bookingId: string
+  quote?: BookingQuote | null
   onDone: () => void
   onBookAnother: () => void
 }) {
-  const invoice = buildInvoice(draft, { bookingId })
+  const invoice = buildInvoice(draft, { bookingId, quote })
   const [email, setEmail] = useState(draft.customer.email || '')
   const [queued, setQueued] = useState(false)
 
@@ -62,10 +65,6 @@ export default function Confirmation({
       </div>
 
       <span className="rounded-full bg-ink px-4 py-1.5 font-mono text-sm font-semibold text-white">{bookingId}</span>
-
-      <p className="w-full max-w-[420px] rounded-xl border border-dashed border-border-input bg-surface-muted px-4 py-3 text-center text-xs text-slate">
-        Saved on this device. It uploads by itself when you&apos;re back online.
-      </p>
 
       <div className="flex w-full flex-col gap-5 lg:flex-row lg:items-start">
         <div id="invoice-print-area" className="w-full lg:max-w-[380px] lg:shrink-0">

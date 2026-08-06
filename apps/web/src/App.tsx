@@ -19,6 +19,7 @@ import Members from './members/Members'
 import Academy from './academy/Academy'
 import Inventory from './inventory/Inventory'
 import PublishedEquipmentBridge from './inventory/PublishedEquipmentBridge'
+import SportCourtBridge from './booking/SportCourtBridge'
 import { demoBookings } from './data/booking'
 import * as db from './lib/db'
 import { useAuth } from './auth/AuthProvider'
@@ -96,6 +97,7 @@ function Shell() {
   return (
     <div className="flex h-screen w-full items-stretch overflow-hidden bg-page">
       <PublishedEquipmentBridge />
+      <SportCourtBridge />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} view={view} onNavigate={navigate} />
 
       <div className="flex h-screen flex-1 flex-col overflow-hidden border-l border-[#ebf0f4]">

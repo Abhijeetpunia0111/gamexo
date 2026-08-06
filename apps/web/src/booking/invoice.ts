@@ -1,5 +1,6 @@
 import { FACILITY_PROFILE } from '../facility/facilityData'
 import { courtById, hour12, money, priceDraft, sportById, toISO, type Draft } from '../data/booking'
+import type { BookingQuote } from '../api/hooks'
 
 /** Today / Tomorrow / "Wed, 12 Aug" — matches the relative-day chips used elsewhere in booking. */
 export function dayLabel(iso: string) {
@@ -17,28 +18,61 @@ export function formalDate(iso: string) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export function buildInvoice(draft: Draft, opts: { bookingId?: string | null } = {}) {
+const num = (v: string | number | null | undefined) => Number(v ?? 0)
+
+/**
+ * `quote` is the server's price for this draft. When it is present the invoice
+ * bills from it, because peak and weekend rating happen in the backend and the
+ * UI's own `priceDraft` cannot reproduce them — showing a total the API would not
+ * charge is worse than showing one a moment later. Without it (the quote is still
+ * in flight, or the caller has no reason to fetch one) the local estimate stands
+ * in, and the numbers agree for any court on a flat rate.
+ */
+export function buildInvoice(
+  draft: Draft,
+  opts: { bookingId?: string | null; quote?: BookingQuote | null } = {},
+) {
   const court = draft.courtId ? courtById(draft.courtId) : null
   const sport = draft.sportId ? sportById(draft.sportId) : null
-  const totals = priceDraft(draft)
+  const local = priceDraft(draft)
+  const quote = opts.quote ?? null
+
+  const slotTotal = quote ? num(quote.court_charge) : local.slotTotal
+  const subtotal = quote
+    ? num(quote.court_charge) + num(quote.equipment_charge) - num(quote.discount)
+    : local.subtotal
+  const gst = quote ? num(quote.taxes) : local.gst
+  const total = quote ? num(quote.total) : local.total
+
   // GST is a flat 18% in the pricing model; split evenly into CGST/SGST for the invoice line items.
-  const cgst = Math.round(totals.gst / 2)
-  const sgst = totals.gst - cgst
+  const cgst = Math.round(gst / 2)
+  const sgst = gst - cgst
   const date = draft.date || toISO(new Date())
   const timeRange =
     draft.startHour != null ? `${hour12(draft.startHour)} – ${hour12(draft.startHour + draft.hours)}` : null
 
+  // The rate the server actually applied, when it told us — that is what makes a
+  // peak-hour line read honestly instead of quoting the court's base price.
+  const hourlyRate = quote ? num(quote.rate_applied) : (court?.price ?? 0)
+  const equipmentLines = quote
+    ? (quote.equipment ?? []).map((l) => ({
+        label: l.name,
+        detail: `× ${l.qty}`,
+        amount: num(l.rate) * l.qty,
+      }))
+    : local.lines.map((l) => ({ label: l.name, detail: `× ${l.qty}`, amount: l.amount }))
+
   const items = [
-    ...(court
+    ...(court || quote
       ? [
           {
-            label: `${court.name} — court hire`,
-            detail: `${money(court.price)} × ${draft.hours} hr`,
-            amount: totals.slotTotal,
+            label: `${court?.name ?? 'Court'} — court hire`,
+            detail: `${money(hourlyRate)} × ${draft.hours} hr`,
+            amount: slotTotal,
           },
         ]
       : []),
-    ...totals.lines.map((l) => ({ label: l.name, detail: `× ${l.qty}`, amount: l.amount })),
+    ...equipmentLines,
   ]
 
   return {
@@ -53,11 +87,14 @@ export function buildInvoice(draft: Draft, opts: { bookingId?: string | null } =
     duration: `${draft.hours} hr`,
     customer: draft.customer,
     items,
-    subtotal: totals.subtotal,
-    gst: totals.gst,
+    subtotal,
+    gst,
     cgst,
     sgst,
-    total: totals.total,
+    total,
+    /** True while the server's price is still pending, so callers can hold off on
+     *  presenting the local estimate as final. */
+    provisional: quote === null,
   }
 }
 

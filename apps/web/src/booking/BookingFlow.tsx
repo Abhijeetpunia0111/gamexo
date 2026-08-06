@@ -6,7 +6,9 @@ import PlayerDetails from './steps/PlayerDetails'
 import AddOns from './steps/AddOns'
 import PaymentStep from './steps/PaymentStep'
 import Confirmation from './steps/Confirmation'
-import { courtById, emptyDraft, priceDraft, toISO, type Booking, type Draft } from '../data/booking'
+import { courtById, emptyDraft, type Draft } from '../data/booking'
+import { toBooking, useBookingQuote, useCreateBooking } from '../api/hooks'
+import { ApiError } from '../api/client'
 import * as db from '../lib/db'
 import arrowRight from '../assets/figma/arrow-right-01.svg'
 
@@ -31,8 +33,12 @@ export default function BookingFlow({
   const [draft, setDraftState] = useState<Draft>(() =>
     initialCourt ? { ...emptyDraft(), sportId: initialCourt.sportId, courtId: initialCourt.id } : emptyDraft(),
   )
-  const [processing, setProcessing] = useState(false)
   const [bookingId, setBookingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const createBooking = useCreateBooking()
+  // Only priced once the wizard reaches the step that shows money.
+  const quoteQuery = useBookingQuote(draft, step === 5)
 
   const setDraft = (patch: Partial<Draft>) => setDraftState((d) => ({ ...d, ...patch }))
 
@@ -53,36 +59,32 @@ export default function BookingFlow({
   }
 
   const pay = () => {
-    setProcessing(true)
-    setTimeout(() => {
-      const id = `NV${Math.floor(10000 + Math.random() * 89999)}`
-      const totals = priceDraft(draft)
-      const booking: Booking = {
-        id,
-        sportId: draft.sportId!,
-        courtId: draft.courtId!,
-        date: draft.date || toISO(new Date()),
-        startHour: draft.startHour!,
-        hours: draft.hours,
-        customer: draft.customer,
-        equipment: draft.equipment,
-        slotTotal: totals.slotTotal,
-        equipmentTotal: totals.equipmentTotal,
-        subtotal: totals.subtotal,
-        gst: totals.gst,
-        total: totals.total,
-        paidTotal: totals.total,
-        payment: { method: draft.payment || 'wallet', status: 'due' },
-        status: 'confirmed',
-        source: 'counter',
-        createdAt: new Date().toISOString(),
-      }
-      db.saveBooking(booking)
-      db.upsertCustomer(draft.customer)
-      db.issueStock(draft.equipment)
-      setBookingId(id)
-      setProcessing(false)
-    }, 1400)
+    setError(null)
+    createBooking.mutate(draft, {
+      onSuccess: (created) => {
+        // Mirrored into localStorage for the screens still reading from there —
+        // Active Courts, Invoices, customer history. The API row is the real one;
+        // delete this line once the last of those reads the API instead.
+        //
+        // Built from the server's response, not the local draft, so the mirror
+        // carries the server's totals and id. Equipment comes from the draft
+        // because the API's lines are keyed by name and these screens look kit up
+        // by id. No `db.issueStock` — creating the booking already moved that
+        // stock through the ledger, and doing it again would double-count.
+        db.saveBooking({ ...toBooking(created), equipment: draft.equipment })
+        db.upsertCustomer(draft.customer)
+        setBookingId(created.id)
+      },
+      onError: (err) => {
+        setError(
+          err instanceof ApiError
+            ? err.isConflict
+              ? `${err.message} Pick another slot or court.`
+              : err.message
+            : 'Could not reach the server. The booking was not created.',
+        )
+      },
+    })
   }
 
   const reset = () => {
@@ -90,6 +92,7 @@ export default function BookingFlow({
     setStep(1)
     setCourtListOpen(false)
     setBookingId(null)
+    setError(null)
     onDone()
   }
 
@@ -98,12 +101,19 @@ export default function BookingFlow({
     setStep(1)
     setCourtListOpen(false)
     setBookingId(null)
+    setError(null)
   }
 
   if (bookingId) {
     return (
       <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 py-5 sm:px-6">
-        <Confirmation draft={draft} bookingId={bookingId} onDone={reset} onBookAnother={bookAnother} />
+        <Confirmation
+          draft={draft}
+          bookingId={bookingId}
+          quote={quoteQuery.data}
+          onDone={reset}
+          onBookAnother={bookAnother}
+        />
       </div>
     )
   }
@@ -127,7 +137,17 @@ export default function BookingFlow({
         {step === 2 && <DateTime draft={draft} setDraft={setDraft} />}
         {step === 3 && <PlayerDetails draft={draft} setDraft={setDraft} />}
         {step === 4 && <AddOns draft={draft} setDraft={setDraft} />}
-        {step === 5 && <PaymentStep draft={draft} processing={processing} onPay={pay} onEditStep={jumpToStep} />}
+        {step === 5 && (
+          <PaymentStep
+            draft={draft}
+            processing={createBooking.isPending}
+            quote={quoteQuery.data}
+            quoteLoading={quoteQuery.isLoading}
+            error={error}
+            onPay={pay}
+            onEditStep={jumpToStep}
+          />
+        )}
       </div>
 
       {step < 5 && (

@@ -73,6 +73,24 @@ export const sportById = (id: string) => SPORTS.find((s) => s.id === id)
 export const courtById = (id: string) => COURTS.find((c) => c.id === id)
 export const courtsForSport = (id: string) => COURTS.filter((c) => c.sportId === id)
 
+/** Same in-place swap as `setEquipmentCatalog` below, for sports and courts.
+ *
+ *  The booking wizard picks from the API (see `useSports`/`useCourts`), so the ids
+ *  it puts in a draft are UUIDs, while the seed rows above are keyed by slug
+ *  (`football-a`). Until these are repointed, every `courtById`/`sportById` lookup
+ *  behind the wizard's pricing, its slot grid and its invoice misses — rendering a
+ *  nameless court at ₹0 rather than failing loudly. `SportCourtBridge` does the
+ *  repointing once, near the root. */
+export function setSportCatalog(items: Sport[]) {
+  SPORTS.length = 0
+  SPORTS.push(...items)
+}
+
+export function setCourtCatalog(items: Court[]) {
+  COURTS.length = 0
+  COURTS.push(...items)
+}
+
 export type Equipment = {
   id: string
   name: string

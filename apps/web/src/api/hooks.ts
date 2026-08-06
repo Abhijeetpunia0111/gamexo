@@ -10,7 +10,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type { components } from './schema'
-import type { Booking, Court, Sport } from '../data/booking'
+import { toISO, type Booking, type Court, type Draft, type Sport } from '../data/booking'
 
 import football from '../assets/figma/sports/football.png'
 import cricket from '../assets/figma/sports/cricket.png'
@@ -23,6 +23,8 @@ type SportOut = components['schemas']['SportOut']
 type CourtWithStatus = components['schemas']['CourtWithStatus']
 type BookingOut = components['schemas']['BookingOut']
 type EquipmentOut = components['schemas']['EquipmentOut']
+/** What `POST /bookings/quote` returns — the server's price for a draft. */
+export type BookingQuote = components['schemas']['QuoteOut']
 export type MovementOut = components['schemas']['MovementOut']
 export type MovementKind = MovementOut['kind']
 
@@ -218,6 +220,70 @@ export function useBookings(page = 1, size = 50) {
     queryFn: async () => {
       const res = await api.listBookings({ page, size })
       return { ...res, items: (res.items ?? []).map(toBooking) }
+    },
+  })
+}
+
+/**
+ * Draft → API payload, shared by the quote and the create call so the two can
+ * never describe different bookings.
+ *
+ * The wizard tracks a local calendar date plus an integer start hour; the API
+ * wants one absolute instant with an offset. Feeding the parts to the `Date`
+ * constructor interprets them in the browser's zone, so `toISOString()` converts
+ * an 8 PM IST slot to the instant that actually is — a naive `${date}T${hour}:00`
+ * would be read as UTC and land the booking 5h30m early.
+ */
+export function draftToBookingPayload(draft: Draft) {
+  const [y, m, d] = (draft.date || toISO(new Date())).split('-').map(Number)
+  const startsAt = new Date(y, m - 1, d, draft.startHour ?? 0, 0, 0, 0)
+  return {
+    court_id: draft.courtId!,
+    starts_at: startsAt.toISOString(),
+    duration_min: draft.hours * 60,
+    equipment: Object.entries(draft.equipment)
+      .filter(([, qty]) => qty > 0)
+      .map(([equipment_id, qty]) => ({ equipment_id, qty })),
+  }
+}
+
+/**
+ * The server's price for the draft as it stands. `enabled` lets the wizard hold
+ * off until the step that shows money — there is no reason to price a draft the
+ * user is still assembling.
+ */
+export function useBookingQuote(draft: Draft, enabled = true) {
+  const ready = Boolean(draft.courtId) && draft.startHour != null
+  const payload = ready ? draftToBookingPayload(draft) : null
+
+  return useQuery({
+    queryKey: ['booking-quote', payload],
+    queryFn: () => api.quoteBooking(payload!),
+    enabled: enabled && payload !== null,
+  })
+}
+
+/**
+ * Create the booking. Returns the server's row — its id is the booking's real
+ * identity, so callers should use that rather than minting one locally.
+ */
+export function useCreateBooking() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (draft: Draft) =>
+      api.createBooking({
+        ...draftToBookingPayload(draft),
+        customer_name: draft.customer.name.trim(),
+        customer_phone: draft.customer.phone.trim() || undefined,
+        booking_type: 'walkin',
+        notes: draft.customer.notes.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      // Creating a booking issues its kit through the movement ledger and takes
+      // the slot, so both stock levels and court occupancy are now stale.
+      qc.invalidateQueries({ queryKey: queryKeys.inventory })
+      qc.invalidateQueries({ queryKey: ['courts'] })
     },
   })
 }

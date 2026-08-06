@@ -190,6 +190,33 @@ export const api = {
     size?: number
   }) => request<Ok<'/api/v1/bookings', 'get'>>('/api/v1/bookings', { query }),
 
+  /** Prices a draft without creating it. Court hire is rated server-side (peak,
+   *  weekend), so the wizard has to ask rather than compute the total it is about
+   *  to charge — this is what keeps the quote and the booking in agreement. */
+  quoteBooking: (body: {
+    court_id: string
+    starts_at: string
+    duration_min: number
+    equipment?: { equipment_id: string; qty: number }[]
+    discount?: number
+  }) =>
+    request<Ok<'/api/v1/bookings/quote', 'post'>>('/api/v1/bookings/quote', { method: 'POST', body }),
+
+  /** 409 when any part of the slot is already taken — enforced by a Postgres
+   *  exclusion constraint, so it is authoritative rather than a racy pre-check. */
+  createBooking: (body: {
+    court_id: string
+    starts_at: string
+    duration_min: number
+    customer_id?: string
+    customer_name?: string
+    customer_phone?: string
+    booking_type?: 'walkin' | 'online'
+    equipment?: { equipment_id: string; qty: number }[]
+    discount?: number
+    notes?: string
+  }) => request<Ok<'/api/v1/bookings', 'post', 201>>('/api/v1/bookings', { method: 'POST', body }),
+
   recordPayment: (body: {
     amount: number
     method: 'cash' | 'upi' | 'card' | 'bank' | 'cheque'

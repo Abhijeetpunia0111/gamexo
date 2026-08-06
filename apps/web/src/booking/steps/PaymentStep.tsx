@@ -1,4 +1,5 @@
 import { money, type Draft } from '../../data/booking'
+import type { BookingQuote } from '../../api/hooks'
 import { buildInvoice } from '../invoice'
 import { downloadInvoicePdf } from '../../lib/invoicePdf'
 import InvoiceDocument from '../InvoiceDocument'
@@ -8,15 +9,21 @@ import { STEPS } from '../Stepper'
 export default function PaymentStep({
   draft,
   processing,
+  quote,
+  quoteLoading,
+  error,
   onPay,
   onEditStep,
 }: {
   draft: Draft
   processing: boolean
+  quote?: BookingQuote | null
+  quoteLoading?: boolean
+  error?: string | null
   onPay: () => void
   onEditStep: (step: number) => void
 }) {
-  const invoice = buildInvoice(draft)
+  const invoice = buildInvoice(draft, { quote })
 
   return (
     <div className="flex w-full flex-col gap-5 lg:flex-row lg:items-start">
@@ -51,6 +58,12 @@ export default function PaymentStep({
           })}
         </div>
 
+        {error && (
+          <p role="alert" className="rounded-xl border border-negative/30 bg-negative/5 px-4 py-3 text-sm text-negative">
+            {error}
+          </p>
+        )}
+
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -61,12 +74,18 @@ export default function PaymentStep({
           </button>
           <button
             type="button"
-            disabled={processing}
+            // Confirming against an unpriced draft would bill a number nobody has
+            // seen, so the button waits for the quote.
+            disabled={processing || quoteLoading}
             onClick={onPay}
             className="flex h-12 flex-1 items-center justify-center gap-2 rounded-full text-sm text-[#fefefe] shadow-[0px_4px_10px_0px_rgba(0,0,0,0.05),0px_10px_120px_0px_rgba(15,73,106,0.1)] disabled:opacity-70"
             style={{ backgroundImage: 'linear-gradient(105deg, rgb(41,41,41) 2%, rgb(26,26,26) 100%)' }}
           >
-            {processing ? 'Creating booking…' : `Create booking · ${money(invoice.total)}`}
+            {processing
+              ? 'Creating booking…'
+              : quoteLoading
+                ? 'Pricing…'
+                : `Create booking · ${money(invoice.total)}`}
           </button>
         </div>
         <p className="text-center text-[11px] text-muted">
