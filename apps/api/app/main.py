@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
+from sqlalchemy.engine import make_url
 
 from app.auth import platform_router
 from app.auth import router as auth_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
-from app.db.session import dispose_engine
+from app.core.timing import DbTimingMiddleware
+from app.db.session import dispose_engine, warm_pool
 from app.modules.academy import router as academy_router
 from app.modules.admin import router as admin_router
 from app.modules.advertising import router as advertising_router
@@ -26,9 +29,22 @@ from app.tenancy.deps import TenantCtx
 # autogenerate sees an empty schema.
 from app import models  # noqa: F401
 
+logger = logging.getLogger("gamexo")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Which database this process is talking to, in the terminal, at boot. Two
+    # separate debugging sessions have been lost to guessing it from row counts.
+    url = make_url(settings.database_url)
+    logger.info(
+        "gamexo API starting — db=%s/%s role=%s pool=%s",
+        url.host,
+        url.database,
+        url.username,
+        settings.db_pool_mode,
+    )
+    await warm_pool()
     yield
     await dispose_engine()
 
@@ -101,6 +117,10 @@ def create_app() -> FastAPI:
         ],
     )
 
+    # Outermost of the two, so its numbers cover the whole request. Server-Timing
+    # is a response header, and CORS must expose it or the browser hides it.
+    app.add_middleware(DbTimingMiddleware)
+
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -110,6 +130,9 @@ def create_app() -> FastAPI:
             # X-Tenant-ID must be allow-listed explicitly or the browser strips it
             # from cross-origin requests and every dev call resolves to no tenant.
             allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Impersonate-Tenant"],
+            # Without this the timing headers exist on the wire but are unreadable
+            # from the browser, which is the only place they are useful.
+            expose_headers=["Server-Timing", "X-DB-Queries", "X-DB-Connects"],
         )
 
     register_exception_handlers(app)
@@ -132,9 +155,27 @@ def create_app() -> FastAPI:
 def _health_router() -> APIRouter:
     router = APIRouter(tags=["health"])
 
-    @router.get("/health", summary="Liveness probe")
+    @router.get(
+        "/health",
+        summary="Liveness probe",
+        description=(
+            "Names the database this process is actually talking to. Two schema-"
+            "identical databases with the same tenant slug are indistinguishable "
+            "from row counts alone, and guessing has cost real debugging time."
+        ),
+    )
     async def health() -> dict[str, str]:
-        return {"status": "ok", "environment": settings.environment}
+        url = make_url(settings.database_url)
+        return {
+            "status": "ok",
+            "environment": settings.environment,
+            # Credentials deliberately absent: this endpoint is unauthenticated,
+            # like /health/tenant below.
+            "db_host": url.host or "?",
+            "db_name": url.database or "?",
+            "db_role": url.username or "?",
+            "pool_mode": settings.db_pool_mode,
+        }
 
     @router.get(
         "/health/tenant",

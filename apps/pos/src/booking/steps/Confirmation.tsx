@@ -1,7 +1,10 @@
-import { Download, Mail, MessageCircle, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
+import { Check, Download, Mail, MessageCircle, RotateCcw } from 'lucide-react'
 import { invoiceSummaryText, shortId, type InvoiceData } from '../invoice'
 import { downloadInvoicePdf } from '../../lib/invoicePdf'
-import { shareByEmail, shareOnWhatsApp } from '../../lib/share'
+import { shareOnWhatsApp } from '../../lib/share'
+import { useEmailInvoice } from '../../api/hooks'
+import { ApiError } from '../../api/client'
 import BookingTicket from '../BookingTicket'
 import SuccessGraphic from '../../checkin/SuccessGraphic'
 import HomeCountdownButton from '../../ui/HomeCountdown'
@@ -16,6 +19,42 @@ export default function Confirmation({
   onBookAnother: () => void
 }) {
   const summary = invoiceSummaryText(invoice)
+
+  const emailInvoice = useEmailInvoice()
+  // Only shown when there is nothing on file — an address is usually taken during
+  // Player Details, and asking again for one we already have wastes the counter's
+  // time on a screen the customer is standing at.
+  const [address, setAddress] = useState(invoice.customer.email ?? '')
+  const [asking, setAsking] = useState(false)
+  const [sentTo, setSentTo] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const send = (to?: string) => {
+    if (!invoice.bookingId) return
+    setError(null)
+    emailInvoice
+      .mutateAsync({ bookingId: invoice.bookingId, to })
+      .then((result) => {
+        setSentTo(result.sent_to)
+        setAsking(false)
+      })
+      .catch((err) => {
+        // A missing address comes back as a 409 — that is a prompt, not a failure.
+        if (err instanceof ApiError && err.isConflict && !to) {
+          setAsking(true)
+          return
+        }
+        setError(
+          err instanceof ApiError ? err.message : 'Could not reach the server to send it.',
+        )
+      })
+  }
+
+  const emailLabel = emailInvoice.isPending
+    ? 'Sending…'
+    : sentTo
+      ? `Sent to ${sentTo}`
+      : 'Email invoice'
 
   return (
     <div className="flex w-full max-w-[480px] flex-col items-center gap-[clamp(1.25rem,2.5vw,1.75rem)]">
@@ -56,14 +95,55 @@ export default function Confirmation({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={() => shareByEmail(`Invoice — ${invoice.facility.name}`, summary, invoice.customer.email)}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-muted py-[clamp(0.875rem,1.6vw,1.125rem)] text-[clamp(0.9375rem,1.1vw,1rem)] font-bold text-ink"
-      >
-        <Mail size={17} strokeWidth={2} />
-        Email invoice
-      </button>
+      <div className="flex w-full flex-col gap-2">
+        <button
+          type="button"
+          disabled={!invoice.bookingId || emailInvoice.isPending || sentTo !== null}
+          onClick={() => send(invoice.customer.email || undefined)}
+          className={`flex w-full items-center justify-center gap-2 rounded-xl py-[clamp(0.875rem,1.6vw,1.125rem)] text-[clamp(0.9375rem,1.1vw,1rem)] font-bold transition-colors disabled:cursor-default ${
+            sentTo ? 'bg-lime text-lime-ink' : 'bg-surface-muted text-ink disabled:opacity-60'
+          }`}
+        >
+          {sentTo ? <Check size={17} strokeWidth={2.5} /> : <Mail size={17} strokeWidth={2} />}
+          {emailLabel}
+        </button>
+
+        {asking && (
+          <div className="flex w-full flex-col gap-2 rounded-xl bg-surface-muted p-3">
+            <label className="text-[clamp(0.8125rem,1vw,0.875rem)] font-semibold text-ink">
+              No email on file — where should this go?
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                inputMode="email"
+                autoFocus
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && address.includes('@')) send(address.trim())
+                }}
+                placeholder="player@example.com"
+                className="min-w-0 flex-1 rounded-lg border border-border-input bg-white px-3 py-2.5 text-[clamp(0.875rem,1vw,0.9375rem)] text-ink placeholder:text-muted focus:border-ink focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={!address.includes('@') || emailInvoice.isPending}
+                onClick={() => send(address.trim())}
+                className="shrink-0 rounded-lg bg-ink px-4 text-[clamp(0.875rem,1vw,0.9375rem)] font-bold text-white disabled:opacity-40"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="text-[clamp(0.8125rem,1vw,0.875rem)] font-medium text-negative">
+            {error}
+          </p>
+        )}
+      </div>
 
       <button
         type="button"

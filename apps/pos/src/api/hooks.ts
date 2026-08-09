@@ -67,7 +67,14 @@ export type EquipmentItem = {
   id: string
   name: string
   category: string
+  /** The rental rate, charged per hour of play. */
   price: number
+  salePrice: number
+  forRent: boolean
+  forSale: boolean
+  /** Base units in one pack; 1 means this is not sold in packs. */
+  packSize: number
+  packPrice: number
   deposit: number
   stock: number
   sportId: string | null
@@ -109,6 +116,11 @@ export function toEquipmentItem(e: EquipmentOut): EquipmentItem {
     name: e.name,
     category: e.category,
     price: num(e.rental_price),
+    salePrice: num(e.sale_price),
+    forRent: e.for_rent ?? true,
+    forSale: e.for_sale ?? false,
+    packSize: e.pack_size ?? 1,
+    packPrice: num(e.pack_price),
     deposit: num(e.deposit),
     stock: e.qty_available,
     sportId: e.sport_id ?? null,
@@ -187,7 +199,7 @@ export type QuoteVars = {
   courtId: string
   startsAt: string
   durationMin: number
-  equipment: { equipment_id: string; qty: number }[]
+  equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
 }
 
 /** Server-priced total for the current draft — peak/weekend rates and GST live where the
@@ -223,7 +235,7 @@ export function useCreateBooking() {
       customerName: string
       customerPhone: string
       notes?: string
-      equipment: { equipment_id: string; qty: number }[]
+      equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
     }) =>
       api.createBooking({
         court_id: vars.courtId,
@@ -246,7 +258,7 @@ export function useCreateBooking() {
 export function useAddEquipmentToBooking() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { bookingId: string; equipment: { equipment_id: string; qty: number }[] }) =>
+    mutationFn: (vars: { bookingId: string; equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[] }) =>
       api.updateBooking(vars.bookingId, { equipment: vars.equipment }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] })
@@ -266,6 +278,14 @@ export function useRecordPayment() {
 
 export function useInvoiceBooking() {
   return useMutation({ mutationFn: (bookingId: string) => api.invoiceBooking(bookingId) })
+}
+
+/** Email the invoice from the server. Resolves only once it has actually gone. */
+export function useEmailInvoice() {
+  return useMutation({
+    mutationFn: (vars: { bookingId: string; to?: string }) =>
+      api.emailBookingInvoice(vars.bookingId, vars.to),
+  })
 }
 
 export type { BookingOut }

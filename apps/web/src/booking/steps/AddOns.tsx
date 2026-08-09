@@ -1,20 +1,25 @@
 import { Minus, Package, Plus } from 'lucide-react'
-import { equipmentForSport, money, type Draft } from '../../data/booking'
+import { equipmentForSport, money, priceEquipment, type Draft } from '../../data/booking'
+import { offersFor, unitsClaimed } from '../../addons/offers'
 import * as db from '../../lib/db'
 
 export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (patch: Partial<Draft>) => void }) {
   db.useDbVersion()
   const items = equipmentForSport(draft.sportId || '')
+  const offers = items.flatMap(offersFor)
 
-  const setQty = (id: string, qty: number, max: number) => {
+  const setQty = (key: string, qty: number, max: number) => {
     const next = { ...draft.equipment }
-    if (qty > 0) next[id] = Math.min(qty, max)
-    else delete next[id]
+    if (qty > 0) next[key] = Math.min(qty, max)
+    else delete next[key]
     setDraft({ equipment: next })
   }
 
+  const drawnFrom = (itemId: string) => unitsClaimed(offers, draft.equipment, itemId)
+
   const trayCount = Object.values(draft.equipment).reduce((a, b) => a + b, 0)
-  const trayTotal = items.reduce((sum, item) => sum + (draft.equipment[item.id] || 0) * item.price, 0)
+  // Rentals are per hour, so the tray total depends on the slot the customer picked.
+  const trayTotal = priceEquipment(draft.equipment, draft.hours).equipmentTotal
 
   return (
     <div className="flex w-full flex-col gap-5">
@@ -24,23 +29,27 @@ export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (p
         <p className="text-sm text-muted">No equipment configured for sale yet.</p>
       ) : (
         <div className="grid w-full grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-          {items.map((item) => {
-            const qty = draft.equipment[item.id] || 0
+          {offers.map((offer) => {
+            const { item } = offer
+            const qty = draft.equipment[offer.key] || 0
             const active = qty > 0
-            const soldOut = item.stock <= 0
-            const atLimit = qty >= item.stock
+            // What this offer could still take, given what its siblings hold.
+            const headroom = Math.floor((item.stock - drawnFrom(item.id)) / offer.draws)
+            const max = qty + Math.max(0, headroom)
+            const soldOut = max <= 0
+            const atLimit = qty >= max
 
             const addFirst = () => {
-              if (qty === 0 && !soldOut) setQty(item.id, 1, item.stock)
+              if (qty === 0 && !soldOut) setQty(offer.key, 1, max)
             }
 
             return (
               <div
-                key={item.id}
+                key={offer.key}
                 role="button"
                 tabIndex={soldOut ? -1 : 0}
                 aria-disabled={soldOut}
-                aria-label={qty === 0 ? `Add ${item.name}` : undefined}
+                aria-label={qty === 0 ? `Add ${item.name} (${offer.label})` : undefined}
                 onClick={addFirst}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -67,12 +76,28 @@ export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (p
                 </div>
 
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-sm font-semibold text-ink">{item.name}</p>
-                  <p className="text-xs text-muted">{item.hint}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-ink">{item.name}</p>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        offer.mode === 'rent' ? 'bg-surface-muted text-slate' : 'bg-lime/30 text-lime-ink'
+                      }`}
+                    >
+                      {offer.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted">
+                    {offer.mode === 'rent' && item.deposit
+                      ? `${item.hint} · ${money(item.deposit)} deposit`
+                      : item.hint}
+                  </p>
                 </div>
 
                 <div className="flex w-full items-center justify-between">
-                  <span className="text-sm font-medium text-positive">{money(item.price)}</span>
+                  <span className="text-sm font-medium text-positive">
+                    {money(offer.price)}
+                    {offer.perHour && <span className="text-xs text-muted">/hr</span>}
+                  </span>
 
                   {active ? (
                     <span
@@ -82,8 +107,8 @@ export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (p
                     >
                       <button
                         type="button"
-                        aria-label={`Remove one ${item.name}`}
-                        onClick={() => setQty(item.id, qty - 1, item.stock)}
+                        aria-label={`Remove one ${item.name} (${offer.label})`}
+                        onClick={() => setQty(offer.key, qty - 1, max)}
                         className="flex size-5 items-center justify-center"
                       >
                         <Minus size={12} />
@@ -91,17 +116,17 @@ export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (p
                       <span className="w-3 text-center text-xs">{qty}</span>
                       <button
                         type="button"
-                        aria-label={`Add one more ${item.name}`}
+                        aria-label={`Add one more ${item.name} (${offer.label})`}
                         disabled={atLimit}
-                        onClick={() => setQty(item.id, qty + 1, item.stock)}
+                        onClick={() => setQty(offer.key, qty + 1, max)}
                         className="flex size-5 items-center justify-center disabled:opacity-40"
                       >
                         <Plus size={12} />
                       </button>
                     </span>
                   ) : (
-                    <span className={`text-xs ${soldOut ? 'text-negative' : item.stock <= 5 ? 'text-flame' : 'text-muted'}`}>
-                      {soldOut ? 'Sold out' : `${item.stock} left`}
+                    <span className={`text-xs ${soldOut ? 'text-negative' : max <= 5 ? 'text-flame' : 'text-muted'}`}>
+                      {soldOut ? 'Sold out' : offer.unit === 'pack' ? `${max} packs left` : `${max} left`}
                     </span>
                   )}
                 </div>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, Callable, Literal
@@ -41,6 +42,80 @@ class Principal:
     @property
     def actor_label(self) -> str:
         return self.email
+
+
+# ── Identity snapshot cache ─────────────────────────────────────────────────
+#
+# Authorising a request needs id, email, role and "is this account still usable".
+# That was a SELECT per request. Cached briefly instead — see the note in
+# get_current_principal for the security trade-off this buys and what it costs.
+
+_IDENTITY_TTL_SECONDS = 30.0
+
+
+@dataclass(frozen=True, slots=True)
+class _Identity:
+    id: uuid.UUID
+    email: str
+    tenant_id: uuid.UUID | None
+    role: Role | None
+
+
+# (tenant_id, user_id) -> (expires_at, identity). Keyed on the tenant too so a
+# cached identity can never satisfy a request resolved to a different academy.
+_identities: dict[tuple[uuid.UUID, uuid.UUID], tuple[float, _Identity]] = {}
+
+
+def _identity_get(tenant_id: uuid.UUID, user_id: uuid.UUID) -> _Identity | None:
+    entry = _identities.get((tenant_id, user_id))
+    if entry is None:
+        return None
+    expires_at, identity = entry
+    if expires_at < time.monotonic():
+        _identities.pop((tenant_id, user_id), None)
+        return None
+    return identity
+
+
+def _identity_put(tenant_id: uuid.UUID, identity: _Identity) -> None:
+    _identities[(tenant_id, identity.id)] = (
+        time.monotonic() + _IDENTITY_TTL_SECONDS,
+        identity,
+    )
+
+
+def revoke_identity(tenant_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Force the next request from this user to re-read the row.
+
+    Call from anything that deactivates, deletes or re-roles a staff member, so the
+    change lands on the next request instead of within the TTL.
+    """
+    _identities.pop((tenant_id, user_id), None)
+
+
+def clear_identity_cache() -> None:
+    """Drop every cached identity.
+
+    For tests, which truncate the database between cases: process-local caches
+    outlive a TRUNCATE and would otherwise answer for rows that no longer exist.
+    """
+    _identities.clear()
+
+
+async def load_user(session: AsyncSession, principal: Principal) -> User:
+    """The full ORM row for a principal, fetched only if it is not already loaded.
+
+    `Principal.user` is populated on the request that filled the identity cache and
+    None on the ones served from it, so anything needing the whole row — rather than
+    just id/email/role — goes through here.
+    """
+    if principal.user is not None:
+        return principal.user
+    result = await session.execute(select(User).where(User.id == principal.id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise AuthenticationError("This account no longer exists.")
+    return user
 
 
 async def _load_platform_admin(session: AsyncSession, admin_id: uuid.UUID) -> PlatformAdmin:
@@ -99,22 +174,48 @@ async def get_current_principal(
             details={"resolved_tenant": tenant.slug},
         )
 
-    result = await db.execute(select(User).where(User.id == uuid.UUID(payload["sub"])))
-    user = result.scalar_one_or_none()
-    if user is None:
-        # RLS also guarantees a user from another tenant is invisible here, so this
-        # covers deletion and cross-tenant lookup alike.
-        raise AuthenticationError("This account no longer exists.")
-    if not user.is_active:
-        raise AuthenticationError(f"This account is {user.status.value}.")
+    user_id = uuid.UUID(payload["sub"])
+
+    # Most endpoints only need id/email/role to authorise. Re-reading the row for
+    # every request costs a round trip that is invisible on localhost and ~45 ms
+    # across an ocean, so a short-lived identity snapshot stands in.
+    #
+    # The trade-off, stated plainly: deactivating or deleting an account takes up
+    # to _IDENTITY_TTL_SECONDS to take effect on an already-issued token. That is
+    # why the TTL is seconds rather than minutes, and why `revoke_identity` exists
+    # for the paths that must be immediate.
+    snapshot = _identity_get(tenant.id, user_id)
+    if snapshot is None:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            # RLS also guarantees a user from another tenant is invisible here, so
+            # this covers deletion and cross-tenant lookup alike.
+            raise AuthenticationError("This account no longer exists.")
+        if not user.is_active:
+            raise AuthenticationError(f"This account is {user.status.value}.")
+        snapshot = _Identity(
+            id=user.id, email=user.email, tenant_id=user.tenant_id, role=user.role
+        )
+        _identity_put(tenant.id, snapshot)
+        # `user` is handed on so handlers needing the ORM object still get it
+        # without a second read on the request that populated the cache.
+        return Principal(
+            id=user.id,
+            kind="user",
+            email=user.email,
+            tenant_id=user.tenant_id,
+            role=user.role,
+            user=user,
+        )
 
     return Principal(
-        id=user.id,
+        id=snapshot.id,
         kind="user",
-        email=user.email,
-        tenant_id=user.tenant_id,
-        role=user.role,
-        user=user,
+        email=snapshot.email,
+        tenant_id=snapshot.tenant_id,
+        role=snapshot.role,
+        user=None,
     )
 
 

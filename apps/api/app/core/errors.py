@@ -48,6 +48,18 @@ class TenantResolutionError(AppError):
     code = "tenant_unresolved"
 
 
+class MailDeliveryError(AppError):
+    """The mail server refused or could not be reached.
+
+    502 rather than 500: the request was valid and we did our part — an upstream we
+    depend on failed. It also tells the caller retrying is reasonable, which for a
+    rejected recipient or a momentary Gmail hiccup it is.
+    """
+
+    status_code = status.HTTP_502_BAD_GATEWAY
+    code = "mail_delivery_failed"
+
+
 def _envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details or {}}}
 

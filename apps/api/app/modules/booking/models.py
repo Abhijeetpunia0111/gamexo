@@ -73,6 +73,20 @@ class EquipmentCondition(StrEnum):
     POOR = "poor"
 
 
+class EquipmentMode(StrEnum):
+    """Whether an add-on leaves the venue for good or comes back."""
+
+    RENT = "rent"
+    BUY = "buy"
+
+
+class EquipmentUnit(StrEnum):
+    """What one unit of an add-on line means — a single item, or a bulk pack."""
+
+    SINGLE = "single"
+    PACK = "pack"
+
+
 class MovementKind(StrEnum):
     """Every way equipment changes state. The ledger the counters derive from."""
 
@@ -197,12 +211,30 @@ class Equipment(TenantScoped):
             "qty_available >= 0 AND qty_issued >= 0 AND qty_maintenance >= 0 AND qty_lost >= 0",
             name="quantities_non_negative",
         ),
+        CheckConstraint("pack_size >= 1", name="pack_size_at_least_one"),
     )
 
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     barcode: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Two prices, because the same item is often both. A racket rents by the
+    # session or sells outright; a shuttlecock sells by the tube or goes out with
+    # a court hire. Which ones are actually offered is stated explicitly rather
+    # than inferred from a non-zero price — a free loan is a legitimate offer, and
+    # a price of 0 is not the same as "not for sale".
     rental_price: Mapped[Decimal] = mapped_column(money(), default=0, nullable=False)
+    sale_price: Mapped[Decimal] = mapped_column(money(), default=0, nullable=False)
+    for_rent: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    for_sale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Packs are a *purchase* concept: you buy a tube of three shuttles, you rent
+    # one racket. `pack_size` is how many base units are in a pack, and stock is
+    # always counted in base units — so selling one 3-pack draws 3 off the shelf.
+    # Counting packs instead would make "0 packs but 7 loose balls" unrepresentable.
+    pack_size: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    pack_price: Mapped[Decimal] = mapped_column(money(), default=0, nullable=False)
+
     deposit: Mapped[Decimal] = mapped_column(money(), default=0, nullable=False)
     condition: Mapped[EquipmentCondition] = mapped_column(
         enum_type(EquipmentCondition, name="equipment_condition"),

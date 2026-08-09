@@ -17,15 +17,18 @@ import {
   equipmentLines,
   money,
   type Booking,
-  type Sale,
   type Equipment,
 } from '../data/booking'
+import type { OutstandingTab } from '../api/hooks'
 import { bookingWindow } from './derive'
 import { formatClock } from './slots'
 
 const PAY_ICONS = { upi: Smartphone, card: CreditCard, cash: Banknote } as const
 
-type Subject = { kind: 'booking'; booking: Booking } | { kind: 'tab'; sale: Sale }
+/** A court booking, or a counter tab — which is an invoice with no booking behind
+ *  it. The two differ in more than shape: a tab has free-text lines rather than
+ *  equipment ids, and nothing to check in, finish or extend. */
+type Subject = { kind: 'booking'; booking: Booking } | { kind: 'tab'; tab: OutstandingTab }
 
 export default function CourtPanel({
   subject,
@@ -54,14 +57,37 @@ export default function CourtPanel({
 
   const isBooking = subject.kind === 'booking'
   const booking = isBooking ? subject.booking : null
-  const sale = !isBooking ? subject.sale : null
+  const tab = !isBooking ? subject.tab : null
   const court = booking ? courtById(booking.courtId) : null
 
-  const row = booking ?? sale!
-  const balance = balanceOf(row)
-  const equipment = booking ? booking.equipment : sale!.equipment
-  const kitLines = equipmentLines(equipment)
-  const customerName = booking ? booking.customer.name : sale!.customer.name
+  const balance = booking ? balanceOf(booking) : tab!.balance
+  // A booking's kit resolves through the catalogue by id; a tab's lines are
+  // already priced text on the invoice and need no lookup.
+  const kitLines = booking
+    ? equipmentLines(booking.equipment, booking.hours)
+    : tab!.items.map((line) => ({
+        id: line.description,
+        name: line.description,
+        qty: line.qty,
+        amount: line.amount,
+      }))
+  const customerName = booking ? booking.customer.name : tab!.customerName
+
+  // One money shape for both subjects, so the receipt markup below does not have
+  // to branch on which kind it is rendering.
+  const totals = booking
+    ? {
+        equipmentTotal: booking.equipmentTotal,
+        gst: booking.gst,
+        total: booking.total,
+        paidTotal: booking.paidTotal,
+      }
+    : {
+        equipmentTotal: tab!.subtotal,
+        gst: tab!.gst,
+        total: tab!.total,
+        paidTotal: tab!.amountPaid,
+      }
 
   return (
     <>
@@ -122,16 +148,16 @@ export default function CourtPanel({
                 ))}
                 <div className="flex justify-between text-slate">
                   <span>GST (18%)</span>
-                  <span className="text-ink">{money(row.gst)}</span>
+                  <span className="text-ink">{money(totals.gst)}</span>
                 </div>
               </div>
               <div className="flex justify-between border-t border-border-card pt-3 text-base font-semibold text-ink">
                 <span>Total</span>
-                <span>{money(row.total)}</span>
+                <span>{money(totals.total)}</span>
               </div>
               <div className="flex justify-between text-sm text-slate">
                 <span>Paid</span>
-                <span>{money(row.paidTotal)}</span>
+                <span>{money(totals.paidTotal)}</span>
               </div>
               <div className="flex justify-between text-sm font-semibold">
                 <span className={balance > 0 ? 'text-negative' : 'text-positive'}>Balance</span>
@@ -190,19 +216,19 @@ export default function CourtPanel({
                   <span className="text-ink">{money(booking.slotTotal)}</span>
                 </div>
               )}
-              {row.equipmentTotal > 0 && (
+              {totals.equipmentTotal > 0 && (
                 <div className="flex justify-between text-slate">
                   <span>Kit</span>
-                  <span className="text-ink">{money(row.equipmentTotal)}</span>
+                  <span className="text-ink">{money(totals.equipmentTotal)}</span>
                 </div>
               )}
               <div className="flex justify-between text-slate">
                 <span>GST (18%)</span>
-                <span className="text-ink">{money(row.gst)}</span>
+                <span className="text-ink">{money(totals.gst)}</span>
               </div>
               <div className="flex justify-between border-t border-border-card pt-2 font-semibold text-ink">
                 <span>Total</span>
-                <span>{money(row.total)}</span>
+                <span>{money(totals.total)}</span>
               </div>
               {balance > 0 ? (
                 <>

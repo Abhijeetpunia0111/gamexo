@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import Audience, TokenError, decode_token
 from app.db.session import tenant_session, untenanted_session
 from app.tenancy.context import TenantContext
-from app.tenancy.resolver import IMPERSONATE_HEADER, TENANT_HEADER, resolve_tenant
+from app.tenancy.resolver import (
+    IMPERSONATE_HEADER,
+    TENANT_HEADER,
+    resolve_tenant,
+    resolve_tenant_cached,
+)
 
 # auto_error=False so anonymous requests reach the endpoint and get our error
 # envelope, rather than Starlette's bare {"detail": "Not authenticated"}.
@@ -45,17 +50,27 @@ async def get_tenant_context(
 ) -> TenantContext:
     """Resolve the tenant for this request.
 
-    Runs on an untenanted session because the `tenant` table is what is being read —
-    it carries no tenant_id and no RLS policy, by necessity.
+    The cache is consulted first, and on a hit no database session is opened at all.
+    That matters more than it looks: this used to be a second session per request,
+    with its own connection checkout, BEGIN, set_config, SELECT and COMMIT, to read
+    a row that changes approximately never — around 1.3 s of a 3 s request when the
+    database is on another continent.
+
+    On a miss it falls back to an untenanted session, because the `tenant` table is
+    what is being read — it carries no tenant_id and no RLS policy, by necessity.
     """
-    async with untenanted_session() as session:
-        context = await resolve_tenant(
-            session,
-            host=request.headers.get("host"),
-            tenant_header=request.headers.get(TENANT_HEADER),
-            impersonate_header=request.headers.get(IMPERSONATE_HEADER),
-            is_platform_admin=_looks_like_platform_token(credentials),
-        )
+    args = {
+        "host": request.headers.get("host"),
+        "tenant_header": request.headers.get(TENANT_HEADER),
+        "impersonate_header": request.headers.get(IMPERSONATE_HEADER),
+        "is_platform_admin": _looks_like_platform_token(credentials),
+    }
+
+    context = resolve_tenant_cached(**args)
+    if context is None:
+        async with untenanted_session() as session:
+            context = await resolve_tenant(session, **args)
+
     # Stash for the audit log and for logging middleware.
     request.state.tenant = context
     return context

@@ -207,7 +207,7 @@ export const api = {
     court_id: string
     starts_at: string
     duration_min: number
-    equipment?: { equipment_id: string; qty: number }[]
+    equipment?: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
     discount?: number
   }) => request<Ok<'/api/v1/bookings/quote', 'post'>>('/api/v1/bookings/quote', { method: 'POST', body }),
 
@@ -219,7 +219,7 @@ export const api = {
     customer_phone?: string
     customer_id?: string
     notes?: string
-    equipment?: { equipment_id: string; qty: number }[]
+    equipment?: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
     booking_type?: 'walkin' | 'online'
   }) =>
     request<Ok<'/api/v1/bookings', 'post', 201>>('/api/v1/bookings', { method: 'POST', body }),
@@ -227,7 +227,7 @@ export const api = {
   updateBooking: (
     bookingId: string,
     body: {
-      equipment?: { equipment_id: string; qty: number }[]
+      equipment?: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
       notes?: string | null
       discount?: number | null
     },
@@ -242,6 +242,14 @@ export const api = {
     request<Ok<'/api/v1/bookings/{booking_id}/invoice', 'post', 201>>(`/api/v1/bookings/${bookingId}/invoice`, {
       method: 'POST',
     }),
+
+  /** Sends the invoice from the server, synchronously — a 502 means it did not go.
+   *  `to` overrides the address on file, for one message only. */
+  emailBookingInvoice: (bookingId: string, to?: string) =>
+    request<Ok<'/api/v1/bookings/{booking_id}/invoice/email', 'post'>>(
+      `/api/v1/bookings/${bookingId}/invoice/email`,
+      { method: 'POST', body: { to: to || null } },
+    ),
 
   listEquipment: (query?: {
     category?: string

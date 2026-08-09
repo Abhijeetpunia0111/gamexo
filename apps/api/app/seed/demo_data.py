@@ -58,17 +58,31 @@ COURTS = [
     ("net-2", "Cricket Net 2", "cricket", 600, 900, "06:00", "21:00", ["Bowler Mat", "Safety Net"]),
 ]
 
+# Add-ons, as offers rather than as single-price rows.
+#
+# Two things to read carefully:
+#
+#   * `rental` is PER HOUR of play. `sale` and `pack_price` are one-off.
+#   * `stock` counts BASE UNITS — individual balls, not tubes. A pack is a way of
+#     buying them, not a separate thing to count, so selling one 3-pack draws 3.
+#     The old rows ("Tennis Balls (3 pack)", stock 30) were ambiguous about whether
+#     that meant 30 balls or 30 tubes; naming the base unit settles it.
+#
+# `consumable` means sold and gone, and drives whether the counter takes a deposit.
 EQUIPMENT = [
-    # name, category, barcode, rental, deposit, condition, stock
-    ("Tennis Racket", "Tennis", "TEN-RAC-001", 100, 500, "good", 12),
-    ("Pickleball Paddle", "Pickleball", "PIK-PAD-001", 80, 400, "excellent", 8),
-    ("Tennis Balls (3 pack)", "Tennis", "TEN-BAL-001", 50, 0, "good", 30),
-    ("Badminton Racket", "Badminton", "BAD-RAC-001", 70, 350, "good", 16),
-    ("Shuttlecocks (6 pack)", "Badminton", "BAD-SHU-001", 40, 0, "excellent", 40),
-    ("Swimming Kit", "Swimming", "SWI-KIT-001", 150, 700, "good", 20),
-    ("Locker Key", "General", "GEN-LOK-001", 30, 200, "excellent", 50),
-    ("Cricket Bat", "Cricket", "CRI-BAT-001", 120, 600, "good", 6),
-    ("Cricket Ball", "Cricket", "CRI-BAL-001", 30, 0, "good", 20),
+    # name, category, barcode, rental/hr, sale, for_rent, for_sale,
+    #   pack_size, pack_price, deposit, consumable, condition, stock
+    ("Tennis Ball", "Tennis", "TEN-BAL-001", 20, 60, True, True, 3, 150, 0, True, "good", 90),
+    ("Shuttlecock", "Badminton", "BAD-SHU-001", 15, 40, True, True, 6, 200, 0, True, "excellent", 240),
+    ("Cricket Ball", "Cricket", "CRI-BAL-001", 30, 250, True, True, 1, 0, 0, True, "good", 20),
+    ("Tennis Racket", "Tennis", "TEN-RAC-001", 100, 1200, True, True, 1, 0, 500, False, "good", 12),
+    ("Badminton Racket", "Badminton", "BAD-RAC-001", 70, 800, True, True, 1, 0, 350, False, "good", 16),
+    ("Pickleball Paddle", "Pickleball", "PIK-PAD-001", 80, 900, True, True, 1, 0, 400, False, "excellent", 8),
+    ("Cricket Bat", "Cricket", "CRI-BAT-001", 120, 1500, True, True, 1, 0, 600, False, "good", 6),
+    # Sold, never lent — hygiene. No rental price, so no rent offer is generated.
+    ("Swimming Kit", "Swimming", "SWI-KIT-001", 0, 700, False, True, 1, 0, 0, True, "good", 20),
+    # Lent, never sold.
+    ("Locker Key", "General", "GEN-LOK-001", 30, 0, True, False, 1, 0, 200, False, "excellent", 50),
 ]
 
 CUSTOMERS = [
@@ -224,13 +238,19 @@ async def seed_domain_data(session: AsyncSession, prefix: str) -> dict[str, int]
 
     # ── Equipment ───────────────────────────────────────────────────────────
     known_barcodes = await _existing(session, Equipment, Equipment.barcode)
-    for name, category, barcode, rental, deposit, condition, stock in EQUIPMENT:
+    for (
+        name, category, barcode, rental, sale, for_rent, for_sale,
+        pack_size, pack_price, deposit, consumable, condition, stock,
+    ) in EQUIPMENT:
         if barcode in known_barcodes:
             continue
         session.add(
             Equipment(
                 name=name, category=category, barcode=barcode,
-                rental_price=Decimal(rental), deposit=Decimal(deposit),
+                rental_price=Decimal(rental), sale_price=Decimal(sale),
+                for_rent=for_rent, for_sale=for_sale,
+                pack_size=pack_size, pack_price=Decimal(pack_price),
+                deposit=Decimal(deposit), consumable=consumable,
                 condition=EquipmentCondition(condition),
                 qty_stock=stock, qty_available=stock,
             )

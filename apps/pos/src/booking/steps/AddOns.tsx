@@ -1,25 +1,30 @@
 import { useState } from 'react'
 import { ImageOff } from 'lucide-react'
-import { useEquipment, type EquipmentItem } from '../../api/hooks'
+import { useEquipment } from '../../api/hooks'
 import { money } from '../../lib/format'
+import { offersFor, unitsClaimed, type Offer } from '../offers'
 import type { Draft } from '../types'
 import addIcon from '../../assets/figma/shop/add.svg'
 import removeIcon from '../../assets/figma/shop/remove.svg'
 
 function ProductCard({
-  item,
+  offer,
   qty,
+  max,
   onAdd,
   onQty,
 }: {
-  item: EquipmentItem
+  offer: Offer
   qty: number
+  /** What this offer can still take, given what its siblings hold. */
+  max: number
   onAdd: () => void
   onQty: (qty: number) => void
 }) {
-  const soldOut = item.stock <= 0
+  const { item } = offer
+  const soldOut = max <= 0
   const active = qty > 0
-  const atLimit = qty >= item.stock
+  const atLimit = qty >= max
 
   return (
     <div
@@ -76,9 +81,27 @@ function ProductCard({
       </div>
 
       <div className="flex flex-col gap-0.5">
-        <p className="text-[clamp(0.8125rem,1vw,0.9375rem)] font-bold leading-tight text-ink">{item.name}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="min-w-0 flex-1 truncate text-[clamp(0.8125rem,1vw,0.9375rem)] font-bold leading-tight text-ink">
+            {item.name}
+          </p>
+          <span
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              offer.mode === 'rent' ? 'bg-surface-muted text-muted' : 'bg-lime/30 text-ink'
+            }`}
+          >
+            {offer.label}
+          </span>
+        </div>
         <p className="text-[clamp(0.75rem,0.9vw,0.8125rem)] font-medium text-muted">
-          {soldOut ? 'Sold out' : money(item.price)}
+          {soldOut ? (
+            'Sold out'
+          ) : (
+            <>
+              {money(offer.price)}
+              {offer.perHour && <span className="text-[0.9em]">/hr</span>}
+            </>
+          )}
         </p>
       </div>
     </div>
@@ -90,16 +113,25 @@ export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (p
   // General kit (no sport of its own) always shows; sport-linked kit only shows
   // for the sport actually being played.
   const items = (equipmentQuery.data ?? []).filter((i) => i.sportId === null || i.sportId === draft.sportId)
+  // One card per offer, not per item: a shuttlecock shows as Rent / Buy / Pack of 6.
+  const offers = items.flatMap(offersFor)
   const categories = ['All', ...new Set(items.map((i) => i.category).filter(Boolean))]
   const [category, setCategory] = useState('All')
-  const shown = category === 'All' ? items : items.filter((i) => i.category === category)
+  const shown = category === 'All' ? offers : offers.filter((o) => o.item.category === category)
   const gridColumns = Math.max(1, Math.ceil(shown.length / 2))
 
-  const setQty = (id: string, qty: number, max: number) => {
+  const setQty = (key: string, qty: number, max: number) => {
     const next = { ...draft.equipment }
-    if (qty > 0) next[id] = Math.min(qty, max)
-    else delete next[id]
+    if (qty > 0) next[key] = Math.min(qty, max)
+    else delete next[key]
     setDraft({ equipment: next })
+  }
+
+  /** Offers of one item share a stock pool — a pack of six leaves six fewer to rent. */
+  const headroomFor = (offer: Offer) => {
+    const qty = draft.equipment[offer.key] || 0
+    const spare = Math.floor((offer.item.stock - unitsClaimed(offers, draft.equipment, offer.item.id)) / offer.draws)
+    return qty + Math.max(0, spare)
   }
 
   return (
@@ -140,15 +172,19 @@ export default function AddOns({ draft, setDraft }: { draft: Draft; setDraft: (p
             className="grid grid-flow-col grid-rows-2 gap-[clamp(0.75rem,1.6vw,1rem)] overflow-x-auto pb-2"
             style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(16rem, 1fr))` }}
           >
-            {shown.map((item) => (
-              <ProductCard
-                key={item.id}
-                item={item}
-                qty={draft.equipment[item.id] || 0}
-                onAdd={() => setQty(item.id, 1, item.stock)}
-                onQty={(qty) => setQty(item.id, qty, item.stock)}
-              />
-            ))}
+            {shown.map((offer) => {
+              const max = headroomFor(offer)
+              return (
+                <ProductCard
+                  key={offer.key}
+                  offer={offer}
+                  qty={draft.equipment[offer.key] || 0}
+                  max={max}
+                  onAdd={() => setQty(offer.key, 1, max)}
+                  onQty={(qty) => setQty(offer.key, qty, max)}
+                />
+              )
+            })}
           </div>
         </>
       )}

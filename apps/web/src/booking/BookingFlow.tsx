@@ -7,7 +7,7 @@ import AddOns from './steps/AddOns'
 import PaymentStep from './steps/PaymentStep'
 import Confirmation from './steps/Confirmation'
 import { courtById, emptyDraft, type Draft } from '../data/booking'
-import { toBooking, useBookingQuote, useCreateBooking } from '../api/hooks'
+import { useBookingQuote, useCreateBooking } from '../api/hooks'
 import { ApiError } from '../api/client'
 import * as db from '../lib/db'
 import arrowRight from '../assets/figma/arrow-right-01.svg'
@@ -62,16 +62,11 @@ export default function BookingFlow({
     setError(null)
     createBooking.mutate(draft, {
       onSuccess: (created) => {
-        // Mirrored into localStorage for the screens still reading from there —
-        // Active Courts, Invoices, customer history. The API row is the real one;
-        // delete this line once the last of those reads the API instead.
-        //
-        // Built from the server's response, not the local draft, so the mirror
-        // carries the server's totals and id. Equipment comes from the draft
-        // because the API's lines are keyed by name and these screens look kit up
-        // by id. No `db.issueStock` — creating the booking already moved that
-        // stock through the ledger, and doing it again would double-count.
-        db.saveBooking({ ...toBooking(created), equipment: draft.equipment })
+        // No localStorage mirror. It used to exist so the unmigrated screens could
+        // still see new bookings, and it was a mistake: the copies outlived two
+        // different databases and surfaced as an "Amount Owed" of ₹2,124 for
+        // bookings that no longer existed anywhere. Active Courts reads the API
+        // now, so there is nothing left to mirror for.
         db.upsertCustomer(draft.customer)
         setBookingId(created.id)
       },

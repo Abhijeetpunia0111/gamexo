@@ -39,6 +39,21 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
+/** A rupee-prefixed amount field. Four of these now, so it stops being inline. */
+function MoneyInput({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
+      <input
+        className={`${inputClass} pl-7`}
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ''))}
+      />
+    </div>
+  )
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border-card bg-white p-5">
@@ -68,6 +83,11 @@ export default function ItemDetail({
   const [category, setCategory] = useState(item?.category ?? '')
   const [price, setPrice] = useState(String(item?.price ?? ''))
   const [deposit, setDeposit] = useState(String(item?.deposit ?? 0))
+  const [salePrice, setSalePrice] = useState(String(item?.salePrice ?? 0))
+  const [forRent, setForRent] = useState(item?.forRent ?? true)
+  const [forSale, setForSale] = useState(item?.forSale ?? false)
+  const [packSize, setPackSize] = useState(String(item?.packSize ?? 1))
+  const [packPrice, setPackPrice] = useState(String(item?.packPrice ?? 0))
   const [sportId, setSportId] = useState<string | null>(item?.sportId ?? null)
   const [lowStockThreshold, setLowStockThreshold] = useState(String(item?.lowStockThreshold ?? 3))
   const [consumable, setConsumable] = useState(item?.consumable ?? true)
@@ -92,10 +112,27 @@ export default function ItemDetail({
   const movement = useCreateMovement()
   const movementsQuery = useMovementHistory(item?.id ?? null)
 
-  const priceNum = Number(price)
+  const priceNum = Number(price) || 0
   const depositNum = Number(deposit) || 0
+  const salePriceNum = Number(salePrice) || 0
+  const packSizeNum = Math.max(1, Math.round(Number(packSize) || 1))
+  const packPriceNum = Number(packPrice) || 0
   const thresholdNum = Math.max(0, Math.round(Number(lowStockThreshold) || 0))
-  const valid = name.trim().length > 0 && category.trim().length > 0 && Number.isFinite(priceNum) && priceNum >= 0
+
+  // Mirrors the API's own rules (EquipmentBase) so the error lands before the
+  // request rather than as a 422 the form has to translate back.
+  const offerError = !forRent && !forSale
+    ? 'An item has to be available to rent, to buy, or both.'
+    : packSizeNum > 1 && !forSale
+      ? 'Packs are bought, not rented — turn on "Available to buy" or set pack size to 1.'
+      : null
+
+  const valid =
+    name.trim().length > 0 &&
+    category.trim().length > 0 &&
+    Number.isFinite(priceNum) &&
+    priceNum >= 0 &&
+    offerError === null
   const saving = create.isPending || update.isPending
 
   const status = item ? stockStatus(item) : 'in-stock'
@@ -122,6 +159,11 @@ export default function ItemDetail({
           barcode: generateBarcode(name),
           price: priceNum,
           deposit: depositNum,
+          salePrice: salePriceNum,
+          forRent,
+          forSale,
+          packSize: packSizeNum,
+          packPrice: packPriceNum,
           condition: 'good',
           lowStockThreshold: thresholdNum,
           sportId,
@@ -235,29 +277,66 @@ export default function ItemDetail({
           </Field>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Price">
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
-              <input
-                className={`${inputClass} pl-7`}
-                inputMode="decimal"
-                value={price}
-                onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ''))}
-              />
+        {/* Rent and Sell are separate offers on the same shelf — an item can be
+            either or both, and the counter shows one card per offer. */}
+        <div className="flex flex-col gap-4 rounded-xl border border-border-card p-4">
+          <label className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-ink">Available to rent</span>
+            <input
+              type="checkbox"
+              checked={forRent}
+              onChange={(e) => setForRent(e.target.checked)}
+              className="size-4 accent-ink"
+            />
+          </label>
+
+          {forRent && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Rent price" hint="Per hour of play">
+                <MoneyInput value={price} onChange={setPrice} />
+              </Field>
+              <Field label="Deposit" hint="Refundable, taken at issue">
+                <MoneyInput value={deposit} onChange={setDeposit} />
+              </Field>
             </div>
-          </Field>
-          <Field label="Deposit" hint="For returnable kit">
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
-              <input
-                className={`${inputClass} pl-7`}
-                inputMode="decimal"
-                value={deposit}
-                onChange={(e) => setDeposit(e.target.value.replace(/[^0-9.]/g, ''))}
-              />
-            </div>
-          </Field>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-xl border border-border-card p-4">
+          <label className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-ink">Available to buy</span>
+            <input
+              type="checkbox"
+              checked={forSale}
+              onChange={(e) => setForSale(e.target.checked)}
+              className="size-4 accent-ink"
+            />
+          </label>
+
+          {forSale && (
+            <>
+              <Field label="Sale price" hint="One unit, one-off charge">
+                <MoneyInput value={salePrice} onChange={setSalePrice} />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Pack size" hint="Units per pack; 1 means no pack option">
+                  <input
+                    className={inputClass}
+                    inputMode="numeric"
+                    value={packSize}
+                    onChange={(e) => setPackSize(e.target.value.replace(/[^0-9]/g, ''))}
+                  />
+                </Field>
+                <Field label="Pack price" hint="What one whole pack costs">
+                  <MoneyInput value={packPrice} onChange={setPackPrice} />
+                </Field>
+              </div>
+              <p className="text-xs text-muted">
+                Stock is counted in single units, so selling one pack of {Math.max(1, Number(packSize) || 1)} takes{' '}
+                {Math.max(1, Number(packSize) || 1)} off the shelf.
+              </p>
+            </>
+          )}
         </div>
 
         {!isNew && (

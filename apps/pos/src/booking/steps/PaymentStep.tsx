@@ -3,6 +3,7 @@ import { useCourts, useQuote, useSports } from '../../api/hooks'
 import { money, startsAtISO } from '../../lib/format'
 import { PAYMENT_METHODS, type PaymentMethodId } from '../../lib/paymentMethods'
 import { buildProvisionalInvoice } from '../invoice'
+import { traySelections } from '../offers'
 import { downloadInvoicePdf } from '../../lib/invoicePdf'
 import InvoiceDocument from '../InvoiceDocument'
 import type { Draft } from '../types'
@@ -35,7 +36,7 @@ export default function PaymentStep({
   const court = courtsQuery.data?.find((c) => c.id === draft.courtId)
 
   const startsAt = draft.date && draft.startHour != null ? startsAtISO(draft.date, draft.startHour) : null
-  const equipment = Object.entries(draft.equipment).map(([equipment_id, qty]) => ({ equipment_id, qty }))
+  const equipment = traySelections(draft.equipment)
   const quoteQuery = useQuote(
     court && startsAt ? { courtId: court.id, startsAt, durationMin: draft.hours * 60, equipment } : null,
   )

@@ -2,6 +2,7 @@ import { FACILITY_PROFILE } from '../facility/facilityData'
 import { formalDate, toISO } from '../lib/format'
 import type { EquipmentItem } from '../api/hooks'
 import type { InvoiceData } from '../booking/invoice'
+import { trayLines } from '../booking/offers'
 
 /** A kit-only sale has no court and no backing booking — the API has nowhere to store an
  *  anonymous sale yet, so this stays a local counter receipt (same limitation the admin
@@ -13,12 +14,14 @@ export function buildQuickSaleReceipt(
   customer: { name: string; phone: string; email: string; customerId: string },
   paidNow: boolean,
 ): InvoiceData {
-  const lines = Object.entries(tray)
-    .filter(([, qty]) => qty > 0)
-    .map(([id, qty]) => {
-      const item = items.find((i) => i.id === id)!
-      return { label: item.name, detail: `× ${qty}`, amount: item.price * qty }
-    })
+  // Priced through the shared offer helper so the receipt cannot disagree with the
+  // price the shop card showed — a pack of three is one line at the pack price,
+  // not three singles.
+  const lines = trayLines(tray, items).map((l) => ({
+    label: l.label,
+    detail: `× ${l.qty}`,
+    amount: l.amount,
+  }))
   const subtotal = lines.reduce((sum, l) => sum + l.amount, 0)
   const gst = Math.round(subtotal * 0.18)
   const cgst = Math.round(gst / 2)

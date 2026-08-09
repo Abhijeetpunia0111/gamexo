@@ -8,6 +8,7 @@ what makes the pricing white-label.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, time
 from decimal import ROUND_HALF_UP, Decimal
@@ -47,13 +48,41 @@ class EquipmentLine:
     name: str
     qty: int
     rate: Decimal
+    #: Optional because rows stored before this field existed do not carry it, and
+    #: a booking read back must not fail on its own history. Everything written
+    #: from now on has it, which is what lets a client edit a booking's kit: with
+    #: only names it cannot say *which* equipment to keep.
+    equipment_id: uuid.UUID | None = None
+    #: Plain strings rather than the enums, so this module stays free of the
+    #: models it prices — and so a stored line survives an enum being renamed.
+    mode: str = "rent"
+    unit: str = "single"
 
-    @property
-    def amount(self) -> Decimal:
-        return money(self.rate * self.qty)
+    def charge_for(self, duration_min: int) -> Decimal:
+        """What this line costs on a session of the given length.
+
+        Renting is per hour of play: a racket out for two hours costs twice a
+        racket out for one, which is what the counter is actually lending. Buying
+        and packs are one-off — a tube of shuttlecocks does not get more expensive
+        because the game ran long.
+
+        Pro-rated by the minute rather than rounded to the hour, matching how
+        `court_charge` is computed in `quote_booking`; a 90-minute booking should
+        not bill kit for two hours while billing the court for one and a half.
+        """
+        if self.mode != "rent":
+            return money(self.rate * self.qty)
+        return money(self.rate * self.qty * Decimal(duration_min) / Decimal(60))
 
     def as_json(self) -> dict[str, Any]:
-        return {"name": self.name, "qty": self.qty, "rate": float(self.rate)}
+        return {
+            "name": self.name,
+            "qty": self.qty,
+            "rate": float(self.rate),
+            "equipment_id": str(self.equipment_id) if self.equipment_id else None,
+            "mode": self.mode,
+            "unit": self.unit,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +159,9 @@ def quote_booking(
     rate = court.peak_rate if (peak or weekend) else court.hourly_rate
     court_charge = money(Decimal(rate) * Decimal(duration_min) / Decimal(60))
 
-    equipment_charge = money(sum((line.amount for line in equipment_lines), Decimal("0")))
+    equipment_charge = money(
+        sum((line.charge_for(duration_min) for line in equipment_lines), Decimal("0"))
+    )
 
     discount = money(max(Decimal("0"), discount))
     subtotal = court_charge + equipment_charge

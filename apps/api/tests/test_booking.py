@@ -130,14 +130,310 @@ async def test_back_to_back_bookings_are_allowed(
     This is the '[)' half-open range paying off. With inclusive bounds both
     bookings would share the instant 11:00 and the second would be rejected,
     making consecutive slots impossible — and the walk-in flow issues exactly these.
+
+    Two *different* customers on purpose. The same customer back-to-back is merged
+    into one session (see below), which would make this pass for the wrong reason.
     """
     ctx = await setup_academy(client, tenant_a)
 
     first = await book(client, ctx, court=ctx["court_1"], starts_at=at(3, 10), minutes=60)
-    second = await book(client, ctx, court=ctx["court_1"], starts_at=at(3, 11), minutes=60)
+    second = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(3, 11),
+        minutes=60,
+        customer_name="Priya Nair",
+        customer_phone="9812345678",
+    )
 
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
+    assert first.json()["id"] != second.json()["id"]
+
+
+async def test_back_to_back_for_the_same_customer_is_merged(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """One continuous stretch of play is one booking, not two.
+
+    Two rows read as two bills: the counter settles one and misses the other, and
+    kit issued in the first hour is priced against that hour alone.
+    """
+    ctx = await setup_academy(client, tenant_a)
+
+    first = await book(client, ctx, court=ctx["court_1"], starts_at=at(7, 10), minutes=60)
+    assert first.status_code == 201, first.text
+    booking_id = first.json()["id"]
+    assert first.json()["duration_min"] == 60
+
+    second = await book(client, ctx, court=ctx["court_1"], starts_at=at(7, 11), minutes=60)
+    assert second.status_code == 201, second.text
+    body = second.json()
+
+    # The same row came back, now twice as long.
+    assert body["id"] == booking_id
+    assert body["duration_min"] == 120
+    # Priced as one two-hour session, not as two independent quotes.
+    assert Decimal(body["court_charge"]) == Decimal("1600.00")
+
+    listed = await client.get("/api/v1/bookings", headers=ctx["headers"])
+    assert listed.json()["total"] == 1
+
+
+async def test_merging_carries_the_kit_across_and_sums_duplicates(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Add-ons from both halves land on the one bill, and the same item stacks."""
+    ctx = await setup_academy(client, tenant_a)
+    kit = [{"equipment_id": ctx["equipment_id"], "qty": 1}]
+
+    first = await book(
+        client, ctx, court=ctx["court_1"], starts_at=at(8, 10), minutes=60, equipment=kit
+    )
+    assert first.status_code == 201, first.text
+    charge_before = Decimal(first.json()["equipment_charge"])
+    assert charge_before > 0
+
+    second = await book(
+        client, ctx, court=ctx["court_1"], starts_at=at(8, 11), minutes=60, equipment=kit
+    )
+    assert second.status_code == 201, second.text
+    body = second.json()
+
+    # One line, quantity two — not the same racket listed twice.
+    assert len(body["equipment"]) == 1
+    assert body["equipment"][0]["qty"] == 2
+    # Two rackets across a two-hour session: rate × qty × hours = 100 × 2 × 2.
+    # Four times the one-hour, one-racket charge, not twice — rentals bill per hour.
+    assert Decimal(body["equipment_charge"]) == charge_before * 4
+
+
+async def _sellable(client: AsyncClient, ctx: dict, **overrides) -> str:
+    """A shuttlecock sold loose or by the tube, and rentable too."""
+    body = {
+        "name": "Shuttlecock",
+        "category": "Badminton",
+        "barcode": "BAD-SHU-001",
+        "rental_price": "30",
+        "sale_price": "40",
+        "for_rent": True,
+        "for_sale": True,
+        "pack_size": 3,
+        "pack_price": "100",
+        "qty_stock": 30,
+        **overrides,
+    }
+    response = await client.post("/api/v1/equipment", json=body, headers=ctx["headers"])
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+async def test_buying_a_pack_charges_the_pack_price_and_draws_base_units(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Two tubes of three cost 2 × pack price and take six shuttles off the shelf."""
+    ctx = await setup_academy(client, tenant_a)
+    shuttle = await _sellable(client, ctx)
+
+    response = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(9, 10),
+        equipment=[{"equipment_id": shuttle, "qty": 2, "mode": "buy", "unit": "pack"}],
+    )
+    assert response.status_code == 201, response.text
+    assert Decimal(response.json()["equipment_charge"]) == Decimal("200.00")
+
+    item = await client.get(f"/api/v1/equipment?size=50", headers=ctx["headers"])
+    row = next(i for i in item.json()["items"] if i["id"] == shuttle)
+    assert row["qty_available"] == 24  # 30 - (2 packs × 3)
+    assert row["qty_issued"] == 6
+
+
+async def test_renting_and_buying_the_same_item_are_separate_lines(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Same shuttlecock, two intentions, two prices — they must not collapse."""
+    ctx = await setup_academy(client, tenant_a)
+    shuttle = await _sellable(client, ctx)
+
+    response = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(10, 10),
+        equipment=[
+            {"equipment_id": shuttle, "qty": 1, "mode": "rent"},
+            {"equipment_id": shuttle, "qty": 1, "mode": "buy"},
+        ],
+    )
+    assert response.status_code == 201, response.text
+    lines = response.json()["equipment"]
+    assert len(lines) == 2
+    assert Decimal(response.json()["equipment_charge"]) == Decimal("70.00")  # 30 rent + 40 buy
+
+
+async def test_a_mode_the_catalogue_does_not_offer_is_refused(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Rent-only kit cannot be bought by asking nicely."""
+    ctx = await setup_academy(client, tenant_a)
+
+    response = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(11, 10),
+        equipment=[{"equipment_id": ctx["equipment_id"], "qty": 1, "mode": "buy"}],
+    )
+    assert response.status_code == 409, response.text
+    assert "not for sale" in response.json()["error"]["message"]
+
+
+async def test_a_quote_echoes_what_was_actually_chosen(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """The summary beside the price has to agree with the price.
+
+    The quote used to rebuild its lines from name/qty/rate alone, so Pydantic
+    defaulted the rest and every purchase came back labelled as a rental.
+    """
+    ctx = await setup_academy(client, tenant_a)
+    shuttle = await _sellable(client, ctx)
+
+    response = await client.post(
+        "/api/v1/bookings/quote",
+        json={
+            "court_id": ctx["court_1"],
+            "starts_at": at(19, 10),
+            "duration_min": 60,
+            "equipment": [{"equipment_id": shuttle, "qty": 1, "mode": "buy", "unit": "pack"}],
+        },
+        headers=ctx["headers"],
+    )
+    assert response.status_code == 200, response.text
+    line = response.json()["equipment"][0]
+    assert line["mode"] == "buy"
+    assert line["unit"] == "pack"
+    assert line["equipment_id"] == shuttle
+
+
+async def test_a_pack_cannot_be_rented(client: AsyncClient, tenant_a: TenantFixture) -> None:
+    """Packs have one price and rentals are per unit — the combination is meaningless."""
+    ctx = await setup_academy(client, tenant_a)
+    shuttle = await _sellable(client, ctx)
+
+    response = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(14, 10),
+        equipment=[{"equipment_id": shuttle, "qty": 1, "mode": "rent", "unit": "pack"}],
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_renting_bills_per_hour_of_play(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """A racket out for two hours costs twice a racket out for one."""
+    ctx = await setup_academy(client, tenant_a)
+    kit = [{"equipment_id": ctx["equipment_id"], "qty": 1}]
+
+    one_hour = await book(
+        client, ctx, court=ctx["court_1"], starts_at=at(15, 10), minutes=60, equipment=kit
+    )
+    two_hours = await book(
+        client, ctx, court=ctx["court_2"], starts_at=at(15, 10), minutes=120, equipment=kit
+    )
+
+    assert Decimal(one_hour.json()["equipment_charge"]) == Decimal("100.00")
+    assert Decimal(two_hours.json()["equipment_charge"]) == Decimal("200.00")
+
+
+async def test_rentals_are_pro_rated_by_the_minute(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """90 minutes bills an hour and a half of kit, matching how the court is charged."""
+    ctx = await setup_academy(client, tenant_a)
+
+    response = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(16, 10),
+        minutes=90,
+        equipment=[{"equipment_id": ctx["equipment_id"], "qty": 1}],
+    )
+    assert Decimal(response.json()["equipment_charge"]) == Decimal("150.00")
+
+
+async def test_buying_does_not_scale_with_duration(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """A tube of shuttlecocks does not cost more because the game ran long."""
+    ctx = await setup_academy(client, tenant_a)
+    shuttle = await _sellable(client, ctx)
+    bought = [{"equipment_id": shuttle, "qty": 1, "mode": "buy", "unit": "pack"}]
+
+    short = await book(
+        client, ctx, court=ctx["court_1"], starts_at=at(17, 10), minutes=60, equipment=bought
+    )
+    long = await book(
+        client, ctx, court=ctx["court_2"], starts_at=at(17, 10), minutes=180, equipment=bought
+    )
+
+    assert Decimal(short.json()["equipment_charge"]) == Decimal("100.00")
+    assert Decimal(long.json()["equipment_charge"]) == Decimal("100.00")
+
+
+async def test_extending_re_prices_the_kit_too(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """The complaint that started this: kit issued in hour one, billed for one hour.
+
+    Extending used to re-price the court and carry the add-on charge across frozen.
+    """
+    ctx = await setup_academy(client, tenant_a)
+
+    created = await book(
+        client,
+        ctx,
+        court=ctx["court_1"],
+        starts_at=at(18, 10),
+        minutes=60,
+        equipment=[{"equipment_id": ctx["equipment_id"], "qty": 1}],
+    )
+    assert created.status_code == 201, created.text
+    booking_id = created.json()["id"]
+    assert Decimal(created.json()["equipment_charge"]) == Decimal("100.00")
+
+    extended = await client.post(
+        f"/api/v1/bookings/{booking_id}/extend",
+        json={"additional_minutes": 60},
+        headers=ctx["headers"],
+    )
+    assert extended.status_code == 200, extended.text
+    body = extended.json()
+    assert body["duration_min"] == 120
+    assert Decimal(body["equipment_charge"]) == Decimal("200.00")
+    # The kit itself is unchanged — one racket, still one racket.
+    assert body["equipment"][0]["qty"] == 1
+
+
+async def test_a_gap_between_sessions_is_not_merged(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """10:00–11:00 then 12:00–13:00 is two visits, however the same the customer is."""
+    ctx = await setup_academy(client, tenant_a)
+
+    first = await book(client, ctx, court=ctx["court_1"], starts_at=at(7, 10), minutes=60)
+    second = await book(client, ctx, court=ctx["court_1"], starts_at=at(7, 12), minutes=60)
+
+    assert first.json()["id"] != second.json()["id"]
+    assert (await client.get("/api/v1/bookings", headers=ctx["headers"])).json()["total"] == 2
 
 
 async def test_the_same_slot_on_a_different_court_is_allowed(

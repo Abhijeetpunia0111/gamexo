@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Check, Search, X } from 'lucide-react'
-import { balanceOf, courtById, listEquipment, money, priceEquipment, withExtras, type Booking } from '../data/booking'
+import { courtById, listEquipment, money, priceEquipment, type Booking } from '../data/booking'
+import { useAttachKitToBooking, useOpenCounterTab, useTodaysBookings } from '../api/hooks'
+import { ApiError } from '../api/client'
 import * as db from '../lib/db'
 
 const inputClass =
@@ -12,30 +14,28 @@ function defaultDueBack() {
   return new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 16)
 }
 
-/** Returnable gear in the tray opens a rental (deposit, due-back) instead of a one-way sale;
- *  everything else still goes through the ordinary stock deduction. This is the one place
- *  either checkout path issues equipment from — Inventory only manages the shelf. */
-function issueTray(tray: Record<string, number>, customer: { name: string; phone: string }, dueBackAt: string) {
+/** Returnable gear opens a rental — deposit and due-back date — which is tracked
+ *  locally because the API has no rental model yet; the deposit is a refundable
+ *  hold, not revenue, so it is deliberately not part of the invoice.
+ *
+ *  Stock is NOT deducted here any more. Both checkout paths now issue through the
+ *  API's movement ledger, and doing it in both places would count every item twice. */
+function openRentals(tray: Record<string, number>, customer: { name: string; phone: string }, dueBackAt: string) {
   const items = listEquipment()
-  const consumable: Record<string, number> = {}
   let depositTotal = 0
   for (const [id, qty] of Object.entries(tray)) {
     const item = items.find((e) => e.id === id)
-    if (item?.returnable) {
-      db.issueRental({
-        itemId: id,
-        qty,
-        deposit: (item.deposit || 0) * qty,
-        customer,
-        issuedAt: new Date().toISOString(),
-        dueBackAt: new Date(dueBackAt).toISOString(),
-      })
-      depositTotal += (item.deposit || 0) * qty
-    } else {
-      consumable[id] = qty
-    }
+    if (!item?.returnable) continue
+    db.issueRental({
+      itemId: id,
+      qty,
+      deposit: (item.deposit || 0) * qty,
+      customer,
+      issuedAt: new Date().toISOString(),
+      dueBackAt: new Date(dueBackAt).toISOString(),
+    })
+    depositTotal += (item.deposit || 0) * qty
   }
-  if (Object.keys(consumable).length > 0) db.issueStock(consumable)
   return depositTotal
 }
 
@@ -65,8 +65,12 @@ export default function CheckoutSheet({
   const rentalLines = Object.entries(tray).filter(([id]) => equipmentList.find((e) => e.id === id)?.returnable)
   const depositDue = rentalLines.reduce((sum, [id, qty]) => sum + (equipmentList.find((e) => e.id === id)?.deposit || 0) * qty, 0)
 
-  const openGames = db
-    .getBookings()
+  const bookingsQuery = useTodaysBookings()
+  const attachKit = useAttachKitToBooking()
+  const openTabMutation = useOpenCounterTab()
+  const [error, setError] = useState<string | null>(null)
+
+  const openGames = (bookingsQuery.data ?? [])
     .filter((b) => b.status !== 'completed')
     .filter((b) => {
       const q = query.trim().toLowerCase()
@@ -76,17 +80,26 @@ export default function CheckoutSheet({
     })
     .slice(0, 6)
 
-  const picked = openGames.find((b) => b.id === pickedId) || db.getBooking(pickedId || '')
+  const picked = openGames.find((b) => b.id === pickedId) ?? null
+
+  const fail = (err: unknown) =>
+    setError(err instanceof ApiError ? err.message : 'Could not reach the server. Nothing was charged.')
 
   const attach = () => {
     if (!picked) return
-    const updated = withExtras(picked, tray)
-    db.saveBooking(updated)
-    const deposit = issueTray(tray, { name: updated.customer.name, phone: updated.customer.phone }, dueBackAt)
-    setSuccess({
-      headline: `Added to ${courtById(updated.courtId)?.name}`,
-      detail: `${updated.customer.name} · balance now ${money(balanceOf(updated))}${deposit > 0 ? ` · ${money(deposit)} deposit collected` : ''}`,
-    })
+    setError(null)
+    attachKit
+      .mutateAsync({ bookingId: picked.id, existing: picked.equipment, add: tray })
+      .then(() => {
+        const deposit = openRentals(tray, { name: picked.customer.name, phone: picked.customer.phone }, dueBackAt)
+        setSuccess({
+          headline: `Added to ${courtById(picked.courtId)?.name ?? 'the booking'}`,
+          detail:
+            `${picked.customer.name} · billed to the booking` +
+            (deposit > 0 ? ` · ${money(deposit)} deposit collected` : ''),
+        })
+      })
+      .catch(fail)
   }
 
   const phoneOk = /^\d{10}$/.test(phone)
@@ -101,27 +114,36 @@ export default function CheckoutSheet({
 
   const openTab = () => {
     if (!phoneOk || !name.trim()) return
-    const id = `CS${Math.floor(10000 + Math.random() * 89999)}`
-    const sale = {
-      id,
-      customer: { name: name.trim(), phone, email: existing?.email || '' },
-      equipment: tray,
-      equipmentTotal: totals.equipmentTotal,
-      gst: totals.gst,
-      total: totals.total,
-      paidTotal: payingNow ? totals.total : 0,
-      payment: payingNow ? { method: 'upi', status: 'paid' } : null,
-      createdAt: new Date().toISOString(),
-    }
-    db.saveSale(sale)
-    db.upsertCustomer({ name: sale.customer.name, phone: sale.customer.phone, email: sale.customer.email })
-    const deposit = issueTray(tray, { name: sale.customer.name, phone: sale.customer.phone }, dueBackAt)
-    setSuccess({
-      headline: 'Tab opened',
-      detail:
-        (payingNow ? 'Paid in full.' : `Balance to collect: ${money(totals.total)}`) +
-        (deposit > 0 ? ` · ${money(deposit)} deposit collected` : ''),
-    })
+    setError(null)
+    const customerName = name.trim()
+
+    openTabMutation
+      .mutateAsync({
+        customerName,
+        tray,
+        // The invoice carries priced text, so the description is what the customer
+        // reads on it — not an id they would have to look up.
+        lines: totals.lines.map((l) => ({
+          description: l.name,
+          qty: l.qty,
+          rate: l.qty > 0 ? l.amount / l.qty : l.amount,
+          amount: l.amount,
+        })),
+        payNow: payingNow,
+        method: 'upi',
+        notes: `Counter sale · ${phone}`,
+      })
+      .then((invoice) => {
+        db.upsertCustomer({ name: customerName, phone, email: existing?.email || '' })
+        const deposit = openRentals(tray, { name: customerName, phone }, dueBackAt)
+        setSuccess({
+          headline: `Tab opened · ${invoice.invoice_no}`,
+          detail:
+            (payingNow ? 'Paid in full.' : `Balance to collect: ${money(totals.total)}`) +
+            (deposit > 0 ? ` · ${money(deposit)} deposit collected` : ''),
+        })
+      })
+      .catch(fail)
   }
 
   return (
@@ -158,6 +180,15 @@ export default function CheckoutSheet({
             </div>
 
             <p className="text-sm text-slate">There is no anonymous sale — every tray lands on a bill or a tab.</p>
+
+            {error && (
+              <p
+                role="alert"
+                className="rounded-lg border border-negative/30 bg-negative/5 px-3.5 py-2.5 text-sm text-negative"
+              >
+                {error}
+              </p>
+            )}
 
             {rentalLines.length > 0 && (
               <div className="flex items-center justify-between gap-3 rounded-lg bg-flame/10 px-3.5 py-2.5">

@@ -17,6 +17,9 @@ dependencies = [
     # Same algorithm, same $2b$ hash format.
     "bcrypt>=5.0.0",
     "email-validator>=2.2.0",
+    # Async SMTP. smtplib is stdlib but blocking, and one slow handshake to Gmail
+    # would stall the event loop for every other request the worker is serving.
+    "aiosmtplib>=4.0.0",
     # zoneinfo has no bundled tz database on Windows (unlike Linux/macOS, which read
     # the OS's own IANA copy) — without this, ZoneInfo("Asia/Kolkata") raises
     # ZoneInfoNotFoundError the first time anything prices a booking by local time.

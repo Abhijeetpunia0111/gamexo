@@ -51,11 +51,46 @@ def _build_engine(url: str, *, pool_mode: PoolMode, echo: bool = False) -> Async
         kwargs.update(
             pool_size=settings.db_pool_size,
             max_overflow=settings.db_max_overflow,
-            pool_pre_ping=True,
-            pool_recycle=1800,
+            # pool_pre_ping is deliberately OFF. It issues a `SELECT 1` on every
+            # single checkout to prove the connection is alive — one extra round
+            # trip per request, which is ~0.1 ms next to the database and ~45 ms
+            # across it. `pool_recycle` below retires connections well inside the
+            # window where an idle one would have been dropped, which covers the
+            # same failure without paying for it on the hot path.
+            pool_pre_ping=False,
+            # Under Neon's idle timeout, and under most cloud NAT idle timeouts.
+            pool_recycle=280,
         )
 
     return create_async_engine(engine_url, **kwargs)
+
+
+async def warm_pool(target: int | None = None) -> None:
+    """Open connections up front so the first requests do not pay for them.
+
+    A cold connect to Neon Singapore is ~400 ms (~1.65 s to us-east-2), all of it
+    TCP, TLS and auth. Without this the first burst of requests after a restart —
+    which is exactly when someone is watching — each pay that individually.
+
+    Failures are swallowed on purpose: an unreachable database at startup should
+    surface as a failing request with a real error, not as a boot crash that makes
+    the API impossible to start while you fix the connection string.
+    """
+    if settings.db_pool_mode == "external_pooler":
+        return  # NullPool: nothing to hold open.
+
+    size = target if target is not None else settings.db_pool_size
+    opened: list[Any] = []
+    try:
+        for _ in range(size):
+            opened.append(await engine.connect())
+    except Exception:
+        pass
+    finally:
+        # Closing returns each connection to the pool; the underlying socket stays
+        # open, which is the whole point.
+        for conn in opened:
+            await conn.close()
 
 
 engine: AsyncEngine = _build_engine(

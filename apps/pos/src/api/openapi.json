@@ -4624,6 +4624,16 @@
             "default": "0",
             "title": "Deposit"
           },
+          "for_rent": {
+            "default": true,
+            "title": "For Rent",
+            "type": "boolean"
+          },
+          "for_sale": {
+            "default": false,
+            "title": "For Sale",
+            "type": "boolean"
+          },
           "image_url": {
             "anyOf": [
               {
@@ -4647,8 +4657,29 @@
             "title": "Name",
             "type": "string"
           },
+          "pack_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Pack Price"
+          },
+          "pack_size": {
+            "default": 1,
+            "description": "Base units in one pack",
+            "minimum": 1.0,
+            "title": "Pack Size",
+            "type": "integer"
+          },
           "published_to_pos": {
-            "default": false,
+            "default": true,
             "title": "Published To Pos",
             "type": "boolean"
           },
@@ -4673,6 +4704,20 @@
             "default": "0",
             "title": "Rental Price"
           },
+          "sale_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Sale Price"
+          },
           "sport_id": {
             "anyOf": [
               {
@@ -4696,6 +4741,22 @@
       },
       "EquipmentLineOut": {
         "properties": {
+          "equipment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment Id"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/EquipmentMode",
+            "default": "rent"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4708,6 +4769,10 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rate",
             "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/EquipmentUnit",
+            "default": "single"
           }
         },
         "required": [
@@ -4717,6 +4782,15 @@
         ],
         "title": "EquipmentLineOut",
         "type": "object"
+      },
+      "EquipmentMode": {
+        "description": "Whether an add-on leaves the venue for good or comes back.",
+        "enum": [
+          "rent",
+          "buy"
+        ],
+        "title": "EquipmentMode",
+        "type": "string"
       },
       "EquipmentOut": {
         "properties": {
@@ -4744,6 +4818,16 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Deposit",
             "type": "string"
+          },
+          "for_rent": {
+            "default": true,
+            "title": "For Rent",
+            "type": "boolean"
+          },
+          "for_sale": {
+            "default": false,
+            "title": "For Sale",
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -4778,8 +4862,21 @@
             "title": "Name",
             "type": "string"
           },
+          "pack_price": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Pack Price",
+            "type": "string"
+          },
+          "pack_size": {
+            "default": 1,
+            "description": "Base units in one pack",
+            "minimum": 1.0,
+            "title": "Pack Size",
+            "type": "integer"
+          },
           "published_to_pos": {
-            "default": false,
+            "default": true,
             "title": "Published To Pos",
             "type": "boolean"
           },
@@ -4807,6 +4904,12 @@
             "default": "0",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rental Price",
+            "type": "string"
+          },
+          "sale_price": {
+            "default": "0",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sale Price",
             "type": "string"
           },
           "sport_id": {
@@ -4837,17 +4940,26 @@
         "type": "object"
       },
       "EquipmentSelection": {
+        "description": "One add-on line on a booking.\n\n`qty` counts whatever `unit` says: two packs, or two loose balls. Defaults keep\nevery existing caller working unchanged \u2014 renting single units is what the\nbooking flow has always done.",
         "properties": {
           "equipment_id": {
             "format": "uuid",
             "title": "Equipment Id",
             "type": "string"
           },
+          "mode": {
+            "$ref": "#/components/schemas/EquipmentMode",
+            "default": "rent"
+          },
           "qty": {
             "exclusiveMinimum": 0.0,
             "maximum": 100.0,
             "title": "Qty",
             "type": "integer"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/EquipmentUnit",
+            "default": "single"
           }
         },
         "required": [
@@ -4856,6 +4968,15 @@
         ],
         "title": "EquipmentSelection",
         "type": "object"
+      },
+      "EquipmentUnit": {
+        "description": "What one unit of an add-on line means \u2014 a single item, or a bulk pack.",
+        "enum": [
+          "single",
+          "pack"
+        ],
+        "title": "EquipmentUnit",
+        "type": "string"
       },
       "EquipmentUpdate": {
         "properties": {
@@ -4907,6 +5028,28 @@
             ],
             "title": "Deposit"
           },
+          "for_rent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "For Rent"
+          },
+          "for_sale": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "For Sale"
+          },
           "image_url": {
             "anyOf": [
               {
@@ -4943,6 +5086,34 @@
             ],
             "title": "Name"
           },
+          "pack_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack Price"
+          },
+          "pack_size": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pack Size"
+          },
           "published_to_pos": {
             "anyOf": [
               {
@@ -4969,6 +5140,22 @@
               }
             ],
             "title": "Rental Price"
+          },
+          "sale_price": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Price"
           },
           "sport_id": {
             "anyOf": [
@@ -5308,6 +5495,43 @@
           "created_at"
         ],
         "title": "InvoiceDetail",
+        "type": "object"
+      },
+      "InvoiceEmailRequest": {
+        "description": "Where to send it, when the address on file is wrong or missing.\n\nCounter staff frequently take an address verbally at the point of paying, and\nthe customer record either has none or has an old one. Overriding here does not\nchange the customer record \u2014 this is one message, not a correction.",
+        "properties": {
+          "to": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          }
+        },
+        "title": "InvoiceEmailRequest",
+        "type": "object"
+      },
+      "InvoiceEmailResult": {
+        "properties": {
+          "invoice_no": {
+            "title": "Invoice No",
+            "type": "string"
+          },
+          "sent_to": {
+            "title": "Sent To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_no",
+          "sent_to"
+        ],
+        "title": "InvoiceEmailResult",
         "type": "object"
       },
       "InvoiceItem": {
@@ -12626,7 +12850,7 @@
         ]
       },
       "post": {
-        "description": "Returns **409** if the court is already taken for any part of the slot. That check is a PostgreSQL exclusion constraint, not a read-then-write in application code \u2014 two staff confirming simultaneously cannot both win.",
+        "description": "Returns **409** if the court is already taken for any part of the slot. That check is a PostgreSQL exclusion constraint, not a read-then-write in application code \u2014 two staff confirming simultaneously cannot both win.\n\nIf the same customer already holds a session on this court that ends exactly when this one starts, no new booking is created: the existing one is extended and returned instead, re-priced as a single longer session. Check the `id` in the response rather than assuming it is new.",
         "operationId": "booking_createBooking",
         "requestBody": {
           "content": {
@@ -12985,6 +13209,65 @@
           }
         ],
         "summary": "Invoice a booking",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/bookings/{booking_id}/invoice/email": {
+      "post": {
+        "description": "Sends immediately rather than queueing, because someone pressed a button and is waiting to tell the customer it has gone. A failure comes back as **502** with the reason rather than disappearing into a retry queue.\n\nRaises the invoice first if the booking has none \u2014 the same idempotent call as `POST /bookings/{booking_id}/invoice`, so this never issues a second number for the same money. Safe to press twice; the customer gets two copies of one invoice, not two invoices.",
+        "operationId": "finance_emailBookingInvoice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "booking_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Booking Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceEmailResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Email a booking's invoice to the customer",
         "tags": [
           "finance"
         ]
@@ -13983,6 +14266,7 @@
     },
     "/api/v1/health": {
       "get": {
+        "description": "Names the database this process is actually talking to. Two schema-identical databases with the same tenant slug are indistinguishable from row counts alone, and guessing has cost real debugging time.",
         "operationId": "health_health",
         "responses": {
           "200": {

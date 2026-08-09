@@ -13,6 +13,13 @@ import { PAYMENT_METHODS, type PaymentMethodId } from '../lib/paymentMethods'
 import { downloadInvoicePdf } from '../lib/invoicePdf'
 import { shareOnWhatsApp } from '../lib/share'
 import { invoiceSummaryText } from '../booking/invoice'
+import {
+  addOnKey,
+  parseAddOnKey,
+  trayTotal as offerTrayTotal,
+  type AddOnMode,
+  type AddOnUnit,
+} from '../booking/offers'
 import { buildQuickSaleReceipt } from './receipt'
 import BookingTicket from '../booking/BookingTicket'
 
@@ -21,21 +28,39 @@ const inputClass =
 
 type Mode = 'booking' | 'sale'
 
-/** BookingOut's equipment lines carry name/qty/rate but not the equipment_id the update
- *  endpoint needs — matched back to the catalogue by name, since that's the only shared key
- *  the API gives us. Returns null if a line can't be matched, so the caller can bail rather
- *  than silently drop an already-billed item. */
+/** Fold a tray into a booking's existing kit, for the update endpoint — which
+ *  replaces the whole list, so anything already billed has to be carried across.
+ *
+ *  Keyed on the offer (id + rent/buy + single/pack), not the item: a rented racket
+ *  and a bought one are two lines at two prices. Lines are matched by
+ *  `equipment_id`; older bookings written before that was recorded fall back to
+ *  matching the catalogue by name, and return null so the caller bails rather than
+ *  silently dropping something the customer has already been charged for.
+ *
+ *  Name matching is last-resort on purpose — a line's name carries a suffix like
+ *  "(pack of 3)", so it will not match the catalogue row it came from. */
 function mergeEquipment(existing: BookingOut['equipment'], tray: Record<string, number>, catalog: EquipmentItem[]) {
-  const merged = new Map<string, number>()
+  const merged = new Map<string, { equipment_id: string; qty: number; mode: AddOnMode; unit: AddOnUnit }>()
+
+  const add = (equipment_id: string, qty: number, mode: AddOnMode, unit: AddOnUnit) => {
+    const key = addOnKey(equipment_id, mode, unit)
+    const prior = merged.get(key)
+    merged.set(key, { equipment_id, qty: (prior?.qty ?? 0) + qty, mode, unit })
+  }
+
   for (const line of existing) {
-    const item = catalog.find((c) => c.name === line.name)
-    if (!item) return null
-    merged.set(item.id, (merged.get(item.id) ?? 0) + line.qty)
+    const id = line.equipment_id ?? catalog.find((c) => c.name === line.name)?.id
+    if (!id) return null
+    add(id, line.qty, (line.mode ?? 'rent') as AddOnMode, (line.unit ?? 'single') as AddOnUnit)
   }
-  for (const [id, qty] of Object.entries(tray)) {
-    if (qty > 0) merged.set(id, (merged.get(id) ?? 0) + qty)
+
+  for (const [key, qty] of Object.entries(tray)) {
+    if (qty <= 0) continue
+    const { id, mode, unit } = parseAddOnKey(key)
+    add(id, qty, mode, unit)
   }
-  return [...merged.entries()].map(([equipment_id, qty]) => ({ equipment_id, qty }))
+
+  return [...merged.values()]
 }
 
 export default function CheckoutSheet({
@@ -65,7 +90,7 @@ export default function CheckoutSheet({
   const [mergeError, setMergeError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<ReturnType<typeof buildQuickSaleReceipt> | null>(null)
 
-  const trayTotal = items.reduce((sum, item) => sum + (tray[item.id] || 0) * item.price, 0)
+  const trayTotal = offerTrayTotal(tray, items)
 
   const searchQuery = useBookingSearch(query)
   const courtsQuery = useCourts()

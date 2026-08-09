@@ -197,7 +197,7 @@ export const api = {
     court_id: string
     starts_at: string
     duration_min: number
-    equipment?: { equipment_id: string; qty: number }[]
+    equipment?: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
     discount?: number
   }) =>
     request<Ok<'/api/v1/bookings/quote', 'post'>>('/api/v1/bookings/quote', { method: 'POST', body }),
@@ -212,15 +212,64 @@ export const api = {
     customer_name?: string
     customer_phone?: string
     booking_type?: 'walkin' | 'online'
-    equipment?: { equipment_id: string; qty: number }[]
+    equipment?: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
     discount?: number
     notes?: string
   }) => request<Ok<'/api/v1/bookings', 'post', 201>>('/api/v1/bookings', { method: 'POST', body }),
 
+  /** Status transitions from the counter. Re-prices only if the court, time,
+   *  duration, equipment or discount change — a status-only patch does not. */
+  updateBooking: (
+    bookingId: string,
+    body: Partial<{
+      status: 'upcoming' | 'active' | 'overdue' | 'completed' | 'cancelled'
+      court_id: string
+      starts_at: string
+      duration_min: number
+      equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
+      discount: number
+      notes: string
+    }>,
+  ) =>
+    request<Ok<'/api/v1/bookings/{booking_id}', 'patch'>>(`/api/v1/bookings/${bookingId}`, {
+      method: 'PATCH',
+      body,
+    }),
+
+  /** 409 with the maximum possible extension if another booking already follows. */
+  extendBooking: (bookingId: string, additionalMinutes: number) =>
+    request<Ok<'/api/v1/bookings/{booking_id}/extend', 'post'>>(
+      `/api/v1/bookings/${bookingId}/extend`,
+      { method: 'POST', body: { additional_minutes: additionalMinutes } },
+    ),
+
+  cancelBooking: (bookingId: string, reason?: string) =>
+    request<Ok<'/api/v1/bookings/{booking_id}/cancel', 'post'>>(
+      `/api/v1/bookings/${bookingId}/cancel`,
+      { method: 'POST', body: { reason } },
+    ),
+
+  listInvoices: (query?: { status?: string; customer_id?: string; search?: string; page?: number; size?: number }) =>
+    request<Ok<'/api/v1/invoices', 'get'>>('/api/v1/invoices', { query }),
+
+  /** An invoice with no booking behind it — the counter tab for a walk-in buying
+   *  kit or drinks without hiring a court. */
+  createInvoice: (body: {
+    customer_name: string
+    customer_id?: string
+    items: { description: string; qty: number; rate: number; amount: number }[]
+    discount?: number
+    notes?: string
+  }) => request<Ok<'/api/v1/invoices', 'post', 201>>('/api/v1/invoices', { method: 'POST', body }),
+
   recordPayment: (body: {
     amount: number
     method: 'cash' | 'upi' | 'card' | 'bank' | 'cheque'
+    /** Settles a court booking; `invoice_id` settles a counter tab. */
     booking_id?: string
+    invoice_id?: string
+    customer_id?: string
+    reference?: string
     notes?: string
   }) => request<unknown>('/api/v1/payments', { method: 'POST', body }),
 
@@ -238,6 +287,11 @@ export const api = {
     category: string
     barcode: string
     rental_price?: number
+    sale_price?: number
+    for_rent?: boolean
+    for_sale?: boolean
+    pack_size?: number
+    pack_price?: number
     deposit?: number
     condition?: 'excellent' | 'good' | 'fair' | 'poor'
     low_stock_threshold?: number
@@ -255,6 +309,11 @@ export const api = {
       name: string
       category: string
       rental_price: number
+      sale_price: number
+      for_rent: boolean
+      for_sale: boolean
+      pack_size: number
+      pack_price: number
       deposit: number
       condition: 'excellent' | 'good' | 'fair' | 'poor'
       low_stock_threshold: number

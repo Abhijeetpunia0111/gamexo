@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, status
 from sqlalchemy import select
 
 from app.audit import write_audit
-from app.auth.deps import CurrentPrincipal
+from app.auth.deps import CurrentPrincipal, load_user
 from app.auth.schemas import (
     LoginRequest,
     MeOut,
@@ -125,7 +125,7 @@ async def me(principal: CurrentPrincipal, tenant: TenantCtx, db: Db) -> MeOut:
         )
 
     return MeOut(
-        user=UserOut.model_validate(principal.user),
+        user=UserOut.model_validate(await load_user(db, principal)),
         platform_admin=None,
         tenant=TenantOut.model_validate(tenant_row),
     )

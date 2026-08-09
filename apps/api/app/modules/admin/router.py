@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import func, select
 
 from app.api_utils import Page, Params, get_or_404, paginate
-from app.auth.deps import RequireAdmin, RequireManager, RequireStaff
+from app.auth.deps import RequireAdmin, RequireManager, RequireStaff, revoke_identity
 from app.auth.schemas import UserOut
 from app.auth.service import initials
 from app.core.errors import ConflictError
@@ -42,6 +42,7 @@ DEFAULT_EVENT_KEYS = (
     "booking_started",
     "booking_ending_soon",
     "invoice_sent",
+    "payment_receipt",
     "payment_reminder",
     "membership_expiring",
     "fee_due",
@@ -222,6 +223,12 @@ async def update_staff(
     if payload.full_name:
         user.avatar_initials = initials(user.full_name)
     await db.flush()
+
+    # Authorisation reads a short-lived identity snapshot rather than the row. Drop
+    # it so a demotion or deactivation applies to the very next request instead of
+    # whenever the TTL happens to expire.
+    revoke_identity(user.tenant_id, user.id)
+
     return UserOut.model_validate(user)
 
 

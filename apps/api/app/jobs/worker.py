@@ -19,17 +19,26 @@ import asyncio
 import socket
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.mail import Message, send_email
+from app.core.mail_templates import booking_confirmation, invoice_raised, payment_receipt
 from app.db.session import dispose_engine, tenant_session, untenanted_session
-from app.models.tenant import Tenant, TenantStatus
+from app.models.tenant import Tenant, TenantSettings, TenantStatus
 from app.modules.admin.models import Job, JobState, Notification, NotificationKind
+from app.modules.admin.notify import (
+    EMAIL_BOOKING_CONFIRMATION,
+    EMAIL_INVOICE,
+    EMAIL_PAYMENT_RECEIPT,
+    as_id,
+)
 from app.modules.advertising.models import HOLDING_STATUSES, AdContract
-from app.modules.booking.models import Booking, BookingStatus
-from app.modules.finance.models import MemberSubscription, SubscriptionStatus
+from app.modules.booking.models import Booking, BookingStatus, Court, Sport
+from app.modules.finance.models import Invoice, MemberSubscription, SubscriptionStatus
 
 WORKER_ID = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
 
@@ -240,6 +249,105 @@ async def _job_renewal(session: AsyncSession, payload: dict[str, Any]) -> str:
 async def _job_bookings(session: AsyncSession, payload: dict[str, Any]) -> str:
     del payload
     return f"advanced {await advance_booking_states(session)}"
+
+
+# ── Outbound email ──────────────────────────────────────────────────────────
+#
+# Handlers re-read the entity rather than trusting the payload, so a confirmation
+# sent a minute after the booking reflects the booking as it now stands — extended,
+# re-priced, kit added. Anything raising here is retried by `run_job` with backoff;
+# anything returning normally is done.
+
+
+async def _tenant_settings(session: AsyncSession) -> TenantSettings:
+    return (await session.execute(select(TenantSettings))).scalar_one()
+
+
+async def _deliver(
+    session: AsyncSession, settings_row: TenantSettings, payload: dict[str, Any], built: tuple[str, str, str]
+) -> str:
+    subject, text, html = built
+    recipient = str(payload.get("recipient", ""))
+    await send_email(
+        session,
+        Message(to=recipient, subject=subject, text=text, html=html),
+        event_key=str(payload.get("event_key", "unknown")),
+        from_email=settings_row.notification_sender_email,
+        from_name=settings_row.notification_sender_name or settings_row.business_name,
+    )
+    return f"emailed {recipient}"
+
+
+@handler(EMAIL_BOOKING_CONFIRMATION)
+async def _job_booking_email(session: AsyncSession, payload: dict[str, Any]) -> str:
+    booking_id = as_id(payload.get("booking_id"))
+    booking = await session.get(Booking, booking_id) if booking_id else None
+    if booking is None:
+        # Deleted between queueing and sending. Nothing to apologise for and
+        # nothing to retry — returning marks the job done.
+        return "booking no longer exists; skipped"
+    if booking.status is BookingStatus.CANCELLED:
+        return "booking cancelled before the confirmation went out; skipped"
+
+    tenant_settings = await _tenant_settings(session)
+    court = await session.get(Court, booking.court_id)
+    sport = await session.get(Sport, booking.sport_id)
+    return await _deliver(
+        session,
+        tenant_settings,
+        payload,
+        booking_confirmation(
+            booking,
+            tenant_settings,
+            court_name=court.name if court else "Court",
+            sport_name=sport.name if sport else "",
+        ),
+    )
+
+
+@handler(EMAIL_PAYMENT_RECEIPT)
+async def _job_payment_email(session: AsyncSession, payload: dict[str, Any]) -> str:
+    tenant_settings = await _tenant_settings(session)
+    balance = payload.get("balance_remaining")
+    return await _deliver(
+        session,
+        tenant_settings,
+        payload,
+        payment_receipt(
+            tenant_settings,
+            customer_name=str(payload.get("customer_name", "")),
+            amount=Decimal(str(payload.get("amount", "0"))),
+            method=str(payload.get("method", "")),
+            reference=str(payload.get("reference", "")),
+            balance_remaining=None if balance is None else Decimal(str(balance)),
+        ),
+    )
+
+
+@handler(EMAIL_INVOICE)
+async def _job_invoice_email(session: AsyncSession, payload: dict[str, Any]) -> str:
+    invoice_id = as_id(payload.get("invoice_id"))
+    invoice = await session.get(Invoice, invoice_id) if invoice_id else None
+    if invoice is None:
+        return "invoice no longer exists; skipped"
+
+    tenant_settings = await _tenant_settings(session)
+    return await _deliver(
+        session,
+        tenant_settings,
+        payload,
+        invoice_raised(
+            tenant_settings,
+            invoice_no=invoice.invoice_no,
+            customer_name=invoice.customer_name,
+            items=list(invoice.items or []),
+            subtotal=invoice.subtotal,
+            gst=invoice.gst,
+            discount=invoice.discount,
+            total=invoice.total,
+            balance_due=invoice.balance_due,
+        ),
+    )
 
 
 # ── Entry point ─────────────────────────────────────────────────────────────

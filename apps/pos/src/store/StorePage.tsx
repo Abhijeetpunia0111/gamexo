@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { ImageOff, ShoppingCart } from 'lucide-react'
-import { useEquipment, type EquipmentItem } from '../api/hooks'
+import { useEquipment } from '../api/hooks'
 import { money } from '../lib/format'
+import { offersFor, unitsClaimed, type Offer } from '../booking/offers'
 import { TopBar } from '../ui/TopBar'
 import { CheckinFooter } from '../checkin/Chrome'
 import CheckoutSheet from './CheckoutSheet'
@@ -9,19 +10,23 @@ import addIcon from '../assets/figma/shop/add.svg'
 import removeIcon from '../assets/figma/shop/remove.svg'
 
 function ProductCard({
-  item,
+  offer,
   qty,
+  max,
   onAdd,
   onQty,
 }: {
-  item: EquipmentItem
+  offer: Offer
   qty: number
+  /** What this offer can still take, given what its siblings hold. */
+  max: number
   onAdd: () => void
   onQty: (qty: number) => void
 }) {
-  const soldOut = item.stock <= 0
+  const { item } = offer
+  const soldOut = max <= 0
   const active = qty > 0
-  const atLimit = qty >= item.stock
+  const atLimit = qty >= max
 
   return (
     <div
@@ -77,9 +82,27 @@ function ProductCard({
       </div>
 
       <div className="flex flex-col items-start gap-0.5">
-        <p className="text-[clamp(0.9375rem,1.3vw,1.125rem)] font-bold text-ink">{item.name}</p>
+        <div className="flex w-full items-center gap-1.5">
+          <p className="min-w-0 flex-1 truncate text-[clamp(0.9375rem,1.3vw,1.125rem)] font-bold text-ink">
+            {item.name}
+          </p>
+          <span
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              offer.mode === 'rent' ? 'bg-surface-muted text-muted' : 'bg-lime/30 text-ink'
+            }`}
+          >
+            {offer.label}
+          </span>
+        </div>
         <p className="text-[clamp(0.8125rem,1vw,0.875rem)] font-medium text-muted">
-          {soldOut ? 'Sold out' : money(item.price)}
+          {soldOut ? (
+            'Sold out'
+          ) : (
+            <>
+              {money(offer.price)}
+              {offer.perHour && <span className="text-[0.9em]">/hr</span>}
+            </>
+          )}
         </p>
       </div>
     </div>
@@ -94,8 +117,17 @@ export default function StorePage({ onHome }: { onHome: () => void }) {
   const [tray, setTray] = useState<Record<string, number>>({})
   const [checkoutOpen, setCheckoutOpen] = useState(false)
 
-  const shown = category === 'All' ? items : items.filter((i) => i.category === category)
+  // One card per offer: a shuttlecock is Rent / Buy / Pack of 6, three prices.
+  const offers = items.flatMap(offersFor)
+  const shown = category === 'All' ? offers : offers.filter((o) => o.item.category === category)
   const gridColumns = Math.max(1, Math.ceil(shown.length / 2))
+
+  /** Offers of one item share a stock pool — a pack of six leaves six fewer to rent. */
+  const headroomFor = (offer: Offer) => {
+    const qty = tray[offer.key] || 0
+    const spare = Math.floor((offer.item.stock - unitsClaimed(offers, tray, offer.item.id)) / offer.draws)
+    return qty + Math.max(0, spare)
+  }
 
   const setQty = (id: string, qty: number, max: number) => {
     setTray((t) => {
@@ -143,15 +175,19 @@ export default function StorePage({ onHome }: { onHome: () => void }) {
               className="grid grid-flow-col grid-rows-2 gap-[clamp(0.75rem,1.6vw,1rem)] overflow-x-auto pb-2"
               style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(16rem, 1fr))` }}
             >
-              {shown.map((item) => (
-                <ProductCard
-                  key={item.id}
-                  item={item}
-                  qty={tray[item.id] || 0}
-                  onAdd={() => setQty(item.id, 1, item.stock)}
-                  onQty={(qty) => setQty(item.id, qty, item.stock)}
-                />
-              ))}
+              {shown.map((offer) => {
+                const max = headroomFor(offer)
+                return (
+                  <ProductCard
+                    key={offer.key}
+                    offer={offer}
+                    qty={tray[offer.key] || 0}
+                    max={max}
+                    onAdd={() => setQty(offer.key, 1, max)}
+                    onQty={(qty) => setQty(offer.key, qty, max)}
+                  />
+                )
+              })}
             </div>
           </>
         )}

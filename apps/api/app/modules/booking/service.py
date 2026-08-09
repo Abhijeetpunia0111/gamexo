@@ -6,7 +6,7 @@ import re
 import uuid
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,9 @@ from app.modules.booking.models import (
     Court,
     Customer,
     Equipment,
+    EquipmentMode,
     EquipmentMovement,
+    EquipmentUnit,
     MovementKind,
     Sport,
 )
@@ -71,11 +73,59 @@ async def resolve_equipment_lines(
             "Unknown equipment.", details={"ids": sorted(str(i) for i in missing)}
         )
 
-    lines = [
-        EquipmentLine(name=by_id[s.equipment_id].name, qty=s.qty, rate=by_id[s.equipment_id].rental_price)
-        for s in selections
-    ]
+    lines = [_line_for(by_id[s.equipment_id], s) for s in selections]
     return lines, by_id
+
+
+def rate_for(item: Equipment, selection: EquipmentSelection) -> Decimal:
+    """The price of one unit of what was actually chosen.
+
+    Refuses a mode the catalogue does not offer rather than quietly falling back to
+    the other price — charging a sale price for something the customer thinks they
+    rented is the kind of error nobody notices until the deposit is disputed.
+    """
+    if selection.unit is EquipmentUnit.PACK:
+        if not item.for_sale:
+            raise ConflictError(f"{item.name} is not for sale.")
+        if item.pack_size <= 1:
+            raise ConflictError(f"{item.name} is not sold in packs.")
+        return item.pack_price
+
+    if selection.mode is EquipmentMode.BUY:
+        if not item.for_sale:
+            raise ConflictError(f"{item.name} is not for sale.")
+        return item.sale_price
+
+    if not item.for_rent:
+        raise ConflictError(f"{item.name} is not available to rent.")
+    return item.rental_price
+
+
+def units_drawn(item: Equipment, selection: EquipmentSelection) -> int:
+    """How many base units leave the shelf for this line.
+
+    Stock is counted in single items, so two 3-packs take six. Keeping the ledger
+    in base units is what lets a pack and a loose single share one stock figure.
+    """
+    if selection.unit is EquipmentUnit.PACK:
+        return selection.qty * max(1, item.pack_size)
+    return selection.qty
+
+
+def _line_for(item: Equipment, selection: EquipmentSelection) -> EquipmentLine:
+    suffix = (
+        f" (pack of {item.pack_size})"
+        if selection.unit is EquipmentUnit.PACK
+        else ("" if selection.mode is EquipmentMode.RENT else " (purchase)")
+    )
+    return EquipmentLine(
+        name=f"{item.name}{suffix}",
+        qty=selection.qty,
+        rate=rate_for(item, selection),
+        equipment_id=item.id,
+        mode=selection.mode,
+        unit=selection.unit,
+    )
 
 
 async def price_booking(
@@ -100,6 +150,135 @@ async def price_booking(
         timezone_name=settings.timezone,
     )
     return quote, lines
+
+
+def equipment_lines_from_json(rows: Iterable[dict[str, Any]] | None) -> list[EquipmentLine]:
+    """Rebuild priced lines from the JSON stored on a booking.
+
+    Rows written before `equipment_id` was recorded carry None there. They still
+    price correctly — name, qty and rate are all present — they just cannot be
+    matched back to a catalogue row, which is why merging falls back to the name.
+    """
+    out: list[EquipmentLine] = []
+    for row in rows or []:
+        raw_id = row.get("equipment_id")
+        out.append(
+            EquipmentLine(
+                name=str(row.get("name", "")),
+                qty=int(row.get("qty", 0)),
+                rate=Decimal(str(row.get("rate", "0"))),
+                equipment_id=uuid.UUID(raw_id) if raw_id else None,
+                mode=str(row.get("mode", "rent")),
+                unit=str(row.get("unit", "single")),
+            )
+        )
+    return out
+
+
+def merge_equipment_lines(
+    existing: Sequence[EquipmentLine], added: Sequence[EquipmentLine]
+) -> list[EquipmentLine]:
+    """Combine two sets of kit, summing quantities of the same item.
+
+    Matched on equipment_id where both sides have one, falling back to name so a
+    legacy line without an id still merges rather than appearing twice on the bill.
+    The later rate wins, because it is the one the catalogue charges today.
+    """
+    merged: list[EquipmentLine] = []
+    index: dict[str, int] = {}
+
+    for line in [*existing, *added]:
+        # Mode and unit are part of the identity: a rented racket and a bought one
+        # are two lines at two prices, and three loose balls are not one 3-pack.
+        base = str(line.equipment_id) if line.equipment_id else f"name:{line.name.lower()}"
+        key = f"{base}|{line.mode}|{line.unit}"
+        at = index.get(key)
+        if at is None:
+            index[key] = len(merged)
+            merged.append(line)
+        else:
+            prior = merged[at]
+            merged[at] = EquipmentLine(
+                name=line.name or prior.name,
+                qty=prior.qty + line.qty,
+                rate=line.rate,
+                equipment_id=line.equipment_id or prior.equipment_id,
+                mode=line.mode,
+                unit=line.unit,
+            )
+    return merged
+
+
+async def find_adjoining_booking(
+    session: AsyncSession,
+    *,
+    court_id: uuid.UUID,
+    starts_at: datetime,
+    customer_id: uuid.UUID | None,
+    customer_phone: str | None,
+) -> Booking | None:
+    """The same customer's session on this court that ends exactly when this starts.
+
+    Two rows for one continuous stretch of play is the thing this exists to stop.
+    They read as separate bills, so the counter settles one and misses the other,
+    and add-ons issued in the first hour are priced against that hour alone.
+
+    Deliberately strict: same court, exactly contiguous, same customer, and still
+    live. A gap of even a minute is two sessions, and a different customer on the
+    next slot is obviously not the same booking.
+    """
+    stmt = select(Booking).where(
+        Booking.court_id == court_id,
+        Booking.ends_at == starts_at,
+        Booking.status.notin_([BookingStatus.CANCELLED, BookingStatus.COMPLETED]),
+    )
+
+    if customer_id is not None:
+        stmt = stmt.where(Booking.customer_id == customer_id)
+    elif customer_phone:
+        # Walk-ins are frequently anonymous, so the phone number is the only stable
+        # identity they have. Without this the common counter case never merges.
+        stmt = stmt.where(Booking.customer_phone == customer_phone)
+    else:
+        return None
+
+    return (await session.execute(stmt.order_by(Booking.ends_at.desc()).limit(1))).scalar_one_or_none()
+
+
+async def absorb_into_booking(
+    session: AsyncSession,
+    booking: Booking,
+    *,
+    court: Court,
+    additional_minutes: int,
+    selections: Sequence[EquipmentSelection],
+) -> Booking:
+    """Fold a would-be adjacent booking into an existing one, and re-price the whole.
+
+    Priced as a single longer session rather than by adding two quotes together:
+    peak-rate boundaries and any per-booking rounding then apply once, to the real
+    duration, which is the number the customer is actually charged for.
+    """
+    added_lines, _ = await resolve_equipment_lines(session, selections)
+    combined = merge_equipment_lines(equipment_lines_from_json(booking.equipment), added_lines)
+
+    settings = await load_settings(session)
+    duration = booking.duration_min + additional_minutes
+    quote = quote_booking(
+        court=court,
+        starts_at=booking.starts_at,
+        duration_min=duration,
+        equipment_lines=combined,
+        discount=booking.discount,
+        booking_rules=settings.booking_rules,
+        tax_config=settings.tax_config,
+        timezone_name=settings.timezone,
+    )
+
+    booking.duration_min = duration
+    booking.ends_at = booking.starts_at + timedelta(minutes=duration)
+    _apply_quote(booking, quote, combined)
+    return booking
 
 
 def _apply_quote(booking: Booking, quote: Quote, lines: Sequence[EquipmentLine]) -> None:
@@ -376,29 +555,36 @@ async def court_availability(
 
 
 async def court_status_at(
-    session: AsyncSession, at: datetime
+    session: AsyncSession,
+    at: datetime,
+    courts: Sequence[Court] | None = None,
 ) -> dict[uuid.UUID, tuple[str, uuid.UUID | None]]:
     """Derive each court's live status — the field the frontend stores on Court.
 
     `maintenance` comes from the stored `is_bookable` flag; `occupied` is computed
     from whatever booking spans `at`. Storing `occupied` would mean something had to
     remember to clear it when the session ended.
+
+    Pass `courts` when the caller has already loaded them. The list endpoint does,
+    and re-selecting the same rows here was a second round trip for data already in
+    memory — free next to the database, ~45 ms from Singapore, and paid on every
+    render of the courts grid.
     """
-    courts = (await session.execute(select(Court))).scalars().all()
+    if courts is None:
+        courts = (await session.execute(select(Court))).scalars().all()
+
+    # Two columns, not whole Booking rows: this only needs to know which court is
+    # busy and which booking made it busy.
     active = (
-        (
-            await session.execute(
-                select(Booking).where(
-                    Booking.status.notin_([BookingStatus.CANCELLED, BookingStatus.COMPLETED]),
-                    Booking.starts_at <= at,
-                    Booking.ends_at > at,
-                )
+        await session.execute(
+            select(Booking.court_id, Booking.id).where(
+                Booking.status.notin_([BookingStatus.CANCELLED, BookingStatus.COMPLETED]),
+                Booking.starts_at <= at,
+                Booking.ends_at > at,
             )
         )
-        .scalars()
-        .all()
-    )
-    occupied = {b.court_id: b.id for b in active}
+    ).all()
+    occupied = {court_id: booking_id for court_id, booking_id in active}
 
     status: dict[uuid.UUID, tuple[str, uuid.UUID | None]] = {}
     for court in courts:

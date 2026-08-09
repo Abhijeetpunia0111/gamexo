@@ -13,9 +13,17 @@ from sqlalchemy.orm import selectinload
 
 from app.api_utils import Page, Params, get_or_404, paginate
 from app.auth.deps import RequireManager, RequireStaff
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, MailDeliveryError
+from app.core.mail import MailNotConfigured, Message, send_email
+from app.core.mail_templates import invoice_raised
+from app.models.tenant import TenantSettings
 from app.modules.booking.models import Booking, BookingEventKind, Customer
 from app.modules.booking.pricing import money
+from app.modules.admin.notify import (
+    EMAIL_INVOICE,
+    EMAIL_PAYMENT_RECEIPT,
+    enqueue_email,
+)
 from app.modules.booking.service import record_event
 from app.modules.finance import service
 from app.modules.finance.models import (
@@ -30,6 +38,8 @@ from app.modules.finance.models import (
 from app.modules.finance.schemas import (
     InvoiceCreate,
     InvoiceDetail,
+    InvoiceEmailRequest,
+    InvoiceEmailResult,
     InvoiceOut,
     MembershipPlanCreate,
     MembershipPlanOut,
@@ -49,6 +59,25 @@ router = APIRouter(tags=["finance"])
 
 
 # ── Invoices ────────────────────────────────────────────────────────────────
+
+
+async def _queue_invoice_email(db, invoice: Invoice) -> None:
+    """Email the invoice to whoever it is addressed to, if they have an address.
+
+    An invoice stores `customer_name` as free text but only sometimes a
+    `customer_id`; without the link there is nowhere to look up an address, so an
+    ad-hoc counter invoice for a walk-in simply is not emailed.
+    """
+    if invoice.customer_id is None:
+        return
+    customer = await db.get(Customer, invoice.customer_id)
+    await enqueue_email(
+        db,
+        kind=EMAIL_INVOICE,
+        event_key="invoice_sent",
+        recipient=customer.email if customer else None,
+        payload={"invoice_id": str(invoice.id)},
+    )
 
 
 @router.get("/invoices", response_model=Page[InvoiceOut], summary="List invoices")
@@ -88,6 +117,7 @@ async def create_invoice(payload: InvoiceCreate, db: Db, _: RequireStaff) -> Inv
         due_date=payload.due_date,
         notes=payload.notes,
     )
+    await _queue_invoice_email(db, invoice)
     return InvoiceOut.model_validate(invoice)
 
 
@@ -136,7 +166,76 @@ async def invoice_booking(booking_id: uuid.UUID, db: Db, principal: RequireStaff
             actor_user_id=principal.id,
         )
         await db.flush()
+        # Only on first issue. This endpoint is idempotent, and re-emailing the
+        # same invoice every time someone reopens the screen is how a customer
+        # ends up with nine copies of one bill.
+        await _queue_invoice_email(db, invoice)
     return InvoiceOut.model_validate(invoice)
+
+
+@router.post(
+    "/bookings/{booking_id}/invoice/email",
+    response_model=InvoiceEmailResult,
+    summary="Email a booking's invoice to the customer",
+    description=(
+        "Sends immediately rather than queueing, because someone pressed a button "
+        "and is waiting to tell the customer it has gone. A failure comes back as "
+        "**502** with the reason rather than disappearing into a retry queue.\n\n"
+        "Raises the invoice first if the booking has none — the same idempotent "
+        "call as `POST /bookings/{booking_id}/invoice`, so this never issues a "
+        "second number for the same money. Safe to press twice; the customer gets "
+        "two copies of one invoice, not two invoices."
+    ),
+)
+async def email_booking_invoice(
+    booking_id: uuid.UUID,
+    payload: InvoiceEmailRequest,
+    db: Db,
+    _: RequireStaff,
+) -> InvoiceEmailResult:
+    booking = await get_or_404(db, Booking, booking_id, label="Booking")
+    invoice = await service.invoice_for_booking(db, booking)
+    await db.flush()
+
+    recipient = payload.to
+    if recipient is None and invoice.customer_id:
+        customer = await db.get(Customer, invoice.customer_id)
+        recipient = customer.email if customer else None
+    if not recipient:
+        raise ConflictError(
+            "No email address on file for this customer — ask for one and send it to that.",
+            details={"booking_id": str(booking_id)},
+        )
+
+    tenant_settings = (await db.execute(select(TenantSettings))).scalar_one()
+    subject, text, html = invoice_raised(
+        tenant_settings,
+        invoice_no=invoice.invoice_no,
+        customer_name=invoice.customer_name,
+        items=list(invoice.items or []),
+        subtotal=invoice.subtotal,
+        gst=invoice.gst,
+        discount=invoice.discount,
+        total=invoice.total,
+        balance_due=invoice.balance_due,
+    )
+
+    try:
+        delivery = await send_email(
+            db,
+            Message(to=str(recipient), subject=subject, text=text, html=html),
+            event_key="invoice_sent",
+            from_email=tenant_settings.notification_sender_email,
+            from_name=tenant_settings.notification_sender_name or tenant_settings.business_name,
+        )
+    except MailNotConfigured as exc:
+        raise ConflictError(
+            "Email is not set up on this server yet — add the SMTP settings first.",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 — the operator needs the real reason
+        raise MailDeliveryError(f"Could not send the invoice: {exc}") from exc
+
+    return InvoiceEmailResult(invoice_no=invoice.invoice_no, sent_to=delivery.recipient)
 
 
 # ── Payments ────────────────────────────────────────────────────────────────
@@ -187,6 +286,12 @@ async def create_payment(payload: PaymentCreate, db: Db, principal: RequireStaff
         notes=payload.notes,
         received_by_user_id=principal.id,
     )
+    # Whoever the money came from, and where to write to them. A payment can be
+    # attached to a booking, an invoice, a customer, or none of the three.
+    recipient: str | None = None
+    customer_name = ""
+    balance_remaining: Decimal | None = None
+
     if payment.booking_id:
         booking = await db.get(Booking, payment.booking_id)
         if booking is not None:
@@ -199,6 +304,33 @@ async def create_payment(payload: PaymentCreate, db: Db, principal: RequireStaff
                 actor_user_id=principal.id,
             )
             await db.flush()
+            customer_name = booking.customer_name
+            balance_remaining = booking.balance_due
+            if booking.customer_id:
+                customer = await db.get(Customer, booking.customer_id)
+                recipient = customer.email if customer else None
+
+    if recipient is None and payment.customer_id:
+        customer = await db.get(Customer, payment.customer_id)
+        if customer is not None:
+            recipient = customer.email
+            customer_name = customer_name or customer.name
+
+    await enqueue_email(
+        db,
+        kind=EMAIL_PAYMENT_RECEIPT,
+        event_key="payment_receipt",
+        recipient=recipient,
+        payload={
+            "customer_name": customer_name,
+            # Decimals are not JSON, and float would round money. Strings round-trip
+            # exactly and the handler rebuilds them as Decimal.
+            "amount": str(payment.amount),
+            "method": payment.method.value,
+            "reference": payment.reference or str(payment.id),
+            "balance_remaining": None if balance_remaining is None else str(balance_remaining),
+        },
+    )
     return PaymentOut.model_validate(payment)
 
 

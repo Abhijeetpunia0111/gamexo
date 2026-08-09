@@ -47,6 +47,35 @@ class Settings(BaseSettings):
     # ── HTTP ────────────────────────────────────────────────────────────────
     cors_origins: list[str] = Field(default_factory=list)
 
+    # ── Email (SMTP) ────────────────────────────────────────────────────────
+    #
+    # Defaults target Gmail / Google Workspace. Two things about Gmail that are
+    # not obvious and cost an afternoon each:
+    #
+    #   * SMTP_PASSWORD must be a 16-character **app password**, not the account
+    #     password, and app passwords only exist once 2-Step Verification is on.
+    #   * Gmail rewrites the From address to the authenticated mailbox unless that
+    #     address is a verified alias. Setting a sender it does not own does not
+    #     error — the mail just arrives from somewhere else.
+    #
+    # Sending is off until a host is configured, so a deployment with no mail set
+    # up queues and skips rather than failing bookings.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    #: 587 uses STARTTLS (upgrade after connecting); 465 is TLS from the first byte.
+    smtp_use_tls: bool = False
+    smtp_starttls: bool = True
+    #: Fallback when a tenant has not set its own sender in TenantSettings.
+    smtp_from_email: str | None = None
+    smtp_from_name: str = "gamexo"
+    smtp_timeout_seconds: int = 20
+    #: Every outbound message goes here instead of the real recipient. For staging,
+    #: and for the first run against a live mailbox when you would rather not post
+    #: real bookings to real customers.
+    smtp_redirect_all_to: str | None = None
+
     # ── Seed ────────────────────────────────────────────────────────────────
     seed_tenant_slug: str = "xcourt"
     seed_tenant_name: str = "XCourt Sports"

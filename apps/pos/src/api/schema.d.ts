@@ -471,6 +471,8 @@ export interface paths {
         /**
          * Create a booking
          * @description Returns **409** if the court is already taken for any part of the slot. That check is a PostgreSQL exclusion constraint, not a read-then-write in application code — two staff confirming simultaneously cannot both win.
+         *
+         *     If the same customer already holds a session on this court that ends exactly when this one starts, no new booking is created: the existing one is extended and returned instead, re-priced as a single longer session. Check the `id` in the response rather than assuming it is new.
          */
         post: operations["booking_createBooking"];
         delete?: never;
@@ -574,6 +576,28 @@ export interface paths {
          * @description Idempotent: a booking that already has an invoice returns the existing one rather than issuing a second number for the same money.
          */
         post: operations["finance_invoiceBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{booking_id}/invoice/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Email a booking's invoice to the customer
+         * @description Sends immediately rather than queueing, because someone pressed a button and is waiting to tell the customer it has gone. A failure comes back as **502** with the reason rather than disappearing into a retry queue.
+         *
+         *     Raises the invoice first if the booking has none — the same idempotent call as `POST /bookings/{booking_id}/invoice`, so this never issues a second number for the same money. Safe to press twice; the customer gets two copies of one invoice, not two invoices.
+         */
+        post: operations["finance_emailBookingInvoice"];
         delete?: never;
         options?: never;
         head?: never;
@@ -758,7 +782,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Liveness probe */
+        /**
+         * Liveness probe
+         * @description Names the database this process is actually talking to. Two schema-identical databases with the same tenant slug are indistinguishable from row counts alone, and guessing has cost real debugging time.
+         */
         get: operations["health_health"];
         put?: never;
         post?: never;
@@ -2906,6 +2933,16 @@ export interface components {
              * @default 0
              */
             deposit?: number | string;
+            /**
+             * For Rent
+             * @default true
+             */
+            for_rent?: boolean;
+            /**
+             * For Sale
+             * @default false
+             */
+            for_sale?: boolean;
             /** Image Url */
             image_url?: string | null;
             /**
@@ -2916,8 +2953,19 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Pack Price
+             * @default 0
+             */
+            pack_price?: number | string;
+            /**
+             * Pack Size
+             * @description Base units in one pack
+             * @default 1
+             */
+            pack_size?: number;
+            /**
              * Published To Pos
-             * @default false
+             * @default true
              */
             published_to_pos?: boolean;
             /**
@@ -2931,18 +2979,35 @@ export interface components {
              * @default 0
              */
             rental_price?: number | string;
+            /**
+             * Sale Price
+             * @default 0
+             */
+            sale_price?: number | string;
             /** Sport Id */
             sport_id?: string | null;
         };
         /** EquipmentLineOut */
         EquipmentLineOut: {
+            /** Equipment Id */
+            equipment_id?: string | null;
+            /** @default rent */
+            mode?: components["schemas"]["EquipmentMode"];
             /** Name */
             name: string;
             /** Qty */
             qty: number;
             /** Rate */
             rate: string;
+            /** @default single */
+            unit?: components["schemas"]["EquipmentUnit"];
         };
+        /**
+         * EquipmentMode
+         * @description Whether an add-on leaves the venue for good or comes back.
+         * @enum {string}
+         */
+        EquipmentMode: "rent" | "buy";
         /** EquipmentOut */
         EquipmentOut: {
             /** Barcode */
@@ -2961,6 +3026,16 @@ export interface components {
              * @default 0
              */
             deposit?: string;
+            /**
+             * For Rent
+             * @default true
+             */
+            for_rent?: boolean;
+            /**
+             * For Sale
+             * @default false
+             */
+            for_sale?: boolean;
             /**
              * Id
              * Format: uuid
@@ -2981,8 +3056,19 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Pack Price
+             * @default 0
+             */
+            pack_price?: string;
+            /**
+             * Pack Size
+             * @description Base units in one pack
+             * @default 1
+             */
+            pack_size?: number;
+            /**
              * Published To Pos
-             * @default false
+             * @default true
              */
             published_to_pos?: boolean;
             /** Qty Available */
@@ -3000,19 +3086,41 @@ export interface components {
              * @default 0
              */
             rental_price?: string;
+            /**
+             * Sale Price
+             * @default 0
+             */
+            sale_price?: string;
             /** Sport Id */
             sport_id?: string | null;
         };
-        /** EquipmentSelection */
+        /**
+         * EquipmentSelection
+         * @description One add-on line on a booking.
+         *
+         *     `qty` counts whatever `unit` says: two packs, or two loose balls. Defaults keep
+         *     every existing caller working unchanged — renting single units is what the
+         *     booking flow has always done.
+         */
         EquipmentSelection: {
             /**
              * Equipment Id
              * Format: uuid
              */
             equipment_id: string;
+            /** @default rent */
+            mode?: components["schemas"]["EquipmentMode"];
             /** Qty */
             qty: number;
+            /** @default single */
+            unit?: components["schemas"]["EquipmentUnit"];
         };
+        /**
+         * EquipmentUnit
+         * @description What one unit of an add-on line means — a single item, or a bulk pack.
+         * @enum {string}
+         */
+        EquipmentUnit: "single" | "pack";
         /** EquipmentUpdate */
         EquipmentUpdate: {
             /** Category */
@@ -3022,16 +3130,26 @@ export interface components {
             consumable?: boolean | null;
             /** Deposit */
             deposit?: number | string | null;
+            /** For Rent */
+            for_rent?: boolean | null;
+            /** For Sale */
+            for_sale?: boolean | null;
             /** Image Url */
             image_url?: string | null;
             /** Low Stock Threshold */
             low_stock_threshold?: number | null;
             /** Name */
             name?: string | null;
+            /** Pack Price */
+            pack_price?: number | string | null;
+            /** Pack Size */
+            pack_size?: number | null;
             /** Published To Pos */
             published_to_pos?: boolean | null;
             /** Rental Price */
             rental_price?: number | string | null;
+            /** Sale Price */
+            sale_price?: number | string | null;
             /** Sport Id */
             sport_id?: string | null;
         };
@@ -3130,6 +3248,25 @@ export interface components {
             subtotal: string;
             /** Total */
             total: string;
+        };
+        /**
+         * InvoiceEmailRequest
+         * @description Where to send it, when the address on file is wrong or missing.
+         *
+         *     Counter staff frequently take an address verbally at the point of paying, and
+         *     the customer record either has none or has an old one. Overriding here does not
+         *     change the customer record — this is one message, not a correction.
+         */
+        InvoiceEmailRequest: {
+            /** To */
+            to?: string | null;
+        };
+        /** InvoiceEmailResult */
+        InvoiceEmailResult: {
+            /** Invoice No */
+            invoice_no: string;
+            /** Sent To */
+            sent_to: string;
         };
         /** InvoiceItem */
         InvoiceItem: {
@@ -6143,6 +6280,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finance_emailBookingInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceEmailResult"];
                 };
             };
             /** @description Validation Error */

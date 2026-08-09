@@ -77,10 +77,10 @@ export default function PlayerDetails({ draft, setDraft }: { draft: Draft; setDr
           </Field>
         </div>
 
-        <Field label="Member / Customer ID" hint="Optional">
+        <Field label="Membership ID" hint="Optional">
           <input
             className={inputClass}
-            placeholder="Only if they're already a member"
+            placeholder="Only for existing members"
             value={customerId}
             onChange={(e) => set({ customerId: e.target.value })}
           />

@@ -25,6 +25,7 @@ from app.modules.booking.models import (
     MovementKind,
     Sport,
 )
+from app.modules.admin.notify import EMAIL_BOOKING_CONFIRMATION, enqueue_email
 from app.modules.booking.pricing import money
 from app.modules.booking.schemas import (
     BookingCancel,
@@ -110,12 +111,15 @@ async def list_courts(
     at: datetime | None = Query(default=None, description="Defaults to now"),
 ) -> list[CourtWithStatus]:
     moment = at or datetime.now(UTC)
-    statuses = await service.court_status_at(db, moment)
 
     stmt = select(Court, Sport.name).join(Sport, Court.sport_id == Sport.id)
     if sport_id is not None:
         stmt = stmt.where(Court.sport_id == sport_id)
     rows = (await db.execute(stmt.order_by(Court.name))).all()
+
+    # Statuses are derived from the courts already fetched above, so this costs one
+    # query for live bookings rather than that plus a second pass over `court`.
+    statuses = await service.court_status_at(db, moment, courts=[court for court, _ in rows])
 
     out: list[CourtWithStatus] = []
     for court, sport_name in rows:
@@ -424,7 +428,20 @@ async def quote(payload: QuoteRequest, db: Db, _: RequireStaff) -> QuoteOut:
         is_peak=result.is_peak,
         is_weekend=result.is_weekend,
         rate_applied=result.rate_applied,
-        equipment=[{"name": l.name, "qty": l.qty, "rate": l.rate} for l in lines],
+        # Whole lines, not just name/qty/rate. Dropping the rest let Pydantic fill
+        # its defaults, so a quote reported every purchase and every pack back as a
+        # single rental — the charge was right and the summary beside it was not.
+        equipment=[
+            {
+                "name": l.name,
+                "qty": l.qty,
+                "rate": l.rate,
+                "equipment_id": l.equipment_id,
+                "mode": l.mode,
+                "unit": l.unit,
+            }
+            for l in lines
+        ],
     )
 
 
@@ -457,6 +474,29 @@ async def list_bookings(
     return await paginate(db, stmt, params, BookingOut)
 
 
+async def _queue_booking_confirmation(db, booking: Booking) -> None:
+    """Queue the customer's confirmation email, if we can reach them.
+
+    Enqueued rather than sent: this runs inside the booking's transaction, so the
+    email exists exactly when the booking does, and a slow or unreachable mail
+    server can never fail a booking someone is standing at the counter for.
+
+    The address lives on `customer`, not on the booking — a walk-in gives a name
+    and a phone, and most never give an email at all, which is why a missing one is
+    silence rather than an error.
+    """
+    if booking.customer_id is None:
+        return
+    customer = await db.get(Customer, booking.customer_id)
+    await enqueue_email(
+        db,
+        kind=EMAIL_BOOKING_CONFIRMATION,
+        event_key="booking_confirmation",
+        recipient=customer.email if customer else None,
+        payload={"booking_id": str(booking.id)},
+    )
+
+
 @router.post(
     "/bookings",
     response_model=BookingDetail,
@@ -465,7 +505,11 @@ async def list_bookings(
     description=(
         "Returns **409** if the court is already taken for any part of the slot. "
         "That check is a PostgreSQL exclusion constraint, not a read-then-write in "
-        "application code — two staff confirming simultaneously cannot both win."
+        "application code — two staff confirming simultaneously cannot both win.\n\n"
+        "If the same customer already holds a session on this court that ends exactly "
+        "when this one starts, no new booking is created: the existing one is extended "
+        "and returned instead, re-priced as a single longer session. Check the `id` in "
+        "the response rather than assuming it is new."
     ),
 )
 async def create_booking(payload: BookingCreate, db: Db, principal: RequireStaff) -> BookingDetail:
@@ -482,6 +526,66 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireStaff
         customer_name=payload.customer_name,
         customer_phone=payload.customer_phone,
     )
+
+    # One continuous stretch of play is one booking. If this customer already has a
+    # session on this court that ends exactly when this one starts, extend it rather
+    # than opening a second row: two rows read as two bills, so the counter settles
+    # one and misses the other, and kit issued in the first hour is priced against
+    # that hour alone. Returns the absorbing booking, so its id is what the caller
+    # should hold on to.
+    adjoining = await service.find_adjoining_booking(
+        db,
+        court_id=court.id,
+        starts_at=payload.starts_at,
+        customer_id=customer_id,
+        customer_phone=phone,
+    )
+    if adjoining is not None:
+        await service.absorb_into_booking(
+            db,
+            adjoining,
+            court=court,
+            additional_minutes=payload.duration_min,
+            selections=payload.equipment,
+        )
+        await service.ensure_slot_free(
+            db,
+            court_id=court.id,
+            starts_at=adjoining.starts_at,
+            ends_at=adjoining.ends_at,
+            exclude_booking_id=adjoining.id,
+        )
+        await db.flush()
+
+        await service.record_event(
+            db,
+            adjoining,
+            kind=BookingEventKind.EXTENDED,
+            label=f"Extended by {payload.duration_min} min",
+            detail=(
+                "A back-to-back booking for the same customer was merged into this "
+                f"session by {principal.email}. Now ends at {adjoining.ends_at.isoformat()}."
+            ),
+            actor_user_id=principal.id,
+        )
+
+        for selection in payload.equipment:
+            item = await db.get(Equipment, selection.equipment_id)
+            if item is not None:
+                await service.apply_movement(
+                    db,
+                    item,
+                    kind=MovementKind.ISSUE,
+                    qty=service.units_drawn(item, selection),
+                    booking_id=adjoining.id,
+                    actor_user_id=principal.id,
+                )
+
+        await db.flush()
+        # The merged session is a different booking from the one the caller asked
+        # for, so it gets its own confirmation showing the full, combined slot.
+        await _queue_booking_confirmation(db, adjoining)
+        return await _detail(db, adjoining)
 
     quote_result, lines = await service.price_booking(
         db,
@@ -531,7 +635,7 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireStaff
                 db,
                 item,
                 kind=MovementKind.ISSUE,
-                qty=selection.qty,
+                qty=service.units_drawn(item, selection),
                 booking_id=booking.id,
                 actor_user_id=principal.id,
             )
@@ -546,6 +650,7 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireStaff
         )
 
     await db.flush()
+    await _queue_booking_confirmation(db, booking)
     return await _detail(db, booking)
 
 
@@ -649,25 +754,17 @@ async def extend_booking(
         )
 
     court = await db.get(Court, booking.court_id)
-    duration = booking.duration_min + payload.additional_minutes
-    quote_result, lines = await service.price_booking(
+    # Re-prices the whole session — court *and* kit. This used to carry
+    # `equipment_charge` across untouched, which was right when rentals were a flat
+    # per-session fee and wrong the moment they became per-hour: a racket out for
+    # the extra hour has to be billed for it.
+    await service.absorb_into_booking(
         db,
+        booking,
         court=court,
-        starts_at=booking.starts_at,
-        duration_min=duration,
+        additional_minutes=payload.additional_minutes,
         selections=[],
-        discount=booking.discount,
     )
-    # Keep the equipment already issued; only the court charge changes.
-    existing = list(booking.equipment or [])
-    booking.duration_min = duration
-    booking.ends_at = booking.starts_at + timedelta(minutes=duration)
-    booking.court_charge = quote_result.court_charge
-    booking.taxes = quote_result.taxes
-    booking.total = money(
-        quote_result.court_charge + booking.equipment_charge - booking.discount + quote_result.taxes
-    )
-    booking.equipment = existing
 
     await service.ensure_slot_free(
         db,

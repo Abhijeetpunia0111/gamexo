@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.modules.finance.models import (
     InvoiceStatus,
@@ -34,6 +34,22 @@ class InvoiceCreate(BaseModel):
     discount: Decimal = Field(default=Decimal("0"), ge=0)
     due_date: date | None = None
     notes: str | None = None
+
+
+class InvoiceEmailRequest(BaseModel):
+    """Where to send it, when the address on file is wrong or missing.
+
+    Counter staff frequently take an address verbally at the point of paying, and
+    the customer record either has none or has an old one. Overriding here does not
+    change the customer record — this is one message, not a correction.
+    """
+
+    to: EmailStr | None = None
+
+
+class InvoiceEmailResult(BaseModel):
+    invoice_no: str
+    sent_to: str
 
 
 class InvoiceOut(BaseModel):

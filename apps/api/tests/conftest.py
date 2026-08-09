@@ -46,8 +46,10 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
+from app.auth.deps import clear_identity_cache  # noqa: E402
 from app.auth.service import provision_tenant  # noqa: E402
 from app.core.security import Role, hash_password  # noqa: E402
+from app.tenancy.resolver import invalidate_tenant_cache  # noqa: E402
 from app.db.session import dispose_engine, tenant_session, untenanted_session  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
@@ -80,7 +82,15 @@ async def _clean_tables() -> AsyncIterator[None]:
 
     Connects as the migrator because TRUNCATE is a table-level privilege that RLS
     does not filter, and the app role deliberately holds no DELETE on audit_log.
+
+    The in-process caches are cleared alongside it. Tenant resolution and identity
+    lookups are memoised per process to keep them off the request path, and every
+    test re-provisions the *same slug* with a *new* UUID — so a surviving entry
+    would resolve to a tenant this TRUNCATE just deleted, and every query behind it
+    would come back empty via RLS.
     """
+    invalidate_tenant_cache()
+    clear_identity_cache()
     engine = create_async_engine(TEST_MIGRATION_URL, poolclass=NullPool)
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE TABLE tenant RESTART IDENTITY CASCADE"))

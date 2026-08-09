@@ -29,6 +29,7 @@ from app.core.errors import AuthenticationError
 from app.core.security import Audience, TokenError, decode_token
 from app.models.audit import ActorKind
 from app.models.tenant import Tenant
+from app.tenancy.resolver import invalidate_tenant_cache
 from app.models.user import PlatformAdmin
 from app.tenancy.deps import UntenantedDb
 
@@ -125,6 +126,11 @@ async def create_tenant(
         changes={"after": {"slug": tenant.slug, "name": tenant.name}},
         request=request,
     )
+
+    # Resolution caches a tenant snapshot per process. Misses are not cached, so a
+    # brand new tenant resolves fine without this — but a slug being *reused* after
+    # deletion would otherwise serve the old id until the TTL expired.
+    invalidate_tenant_cache(tenant.slug, str(tenant.id))
 
     return CreateTenantResponse(
         tenant=TenantOut.model_validate(tenant),

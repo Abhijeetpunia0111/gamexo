@@ -10,7 +10,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type { components } from './schema'
-import { toISO, type Booking, type Court, type Draft, type Sport } from '../data/booking'
+import {
+  addOnKey,
+  parseAddOnKey,
+  toISO,
+  type Booking,
+  type Court,
+  type Draft,
+  type Sport,
+} from '../data/booking'
 
 import football from '../assets/figma/sports/football.png'
 import cricket from '../assets/figma/sports/cricket.png'
@@ -87,6 +95,18 @@ const BOOKING_STATUS: Record<string, Booking['status']> = {
   cancelled: 'completed',
 }
 
+/**
+ * The write direction, kept next to its inverse above so the pair stays visibly
+ * paired. Not derivable from `BOOKING_STATUS`: that map is lossy on purpose —
+ * three API states collapse into `checked-in`/`completed`, and checking someone in
+ * must produce `active`, never `overdue`.
+ */
+export const API_BOOKING_STATUS = {
+  'checked-in': 'active',
+  completed: 'completed',
+  confirmed: 'upcoming',
+} as const satisfies Record<Booking['status'], string>
+
 export function toBooking(b: BookingOut): Booking {
   const starts = new Date(b.starts_at)
   // Local date parts, not toISOString() — that would shift an evening booking in
@@ -95,8 +115,17 @@ export function toBooking(b: BookingOut): Booking {
     starts.getDate(),
   ).padStart(2, '0')}`
 
+  // Keyed by the offer that was taken — id plus rent/buy plus single/pack — so a
+  // rented racket and a bought one stay two lines when this booking is edited.
+  // Bookings written before `equipment_id` was recorded fall back to the name,
+  // which still renders; it just cannot be resolved back to a catalogue row.
   const equipment: Record<string, number> = {}
-  for (const line of b.equipment ?? []) equipment[line.name] = line.qty
+  for (const line of b.equipment ?? []) {
+    const key = line.equipment_id
+      ? addOnKey(line.equipment_id, line.mode ?? 'rent', line.unit ?? 'single')
+      : line.name
+    equipment[key] = (equipment[key] ?? 0) + line.qty
+  }
 
   return {
     id: b.id,
@@ -135,7 +164,14 @@ export type InventoryItem = {
   name: string
   category: string
   barcode: string
+  /** The rental rate. Kept as `price` because every existing screen reads it. */
   price: number
+  salePrice: number
+  forRent: boolean
+  forSale: boolean
+  /** Base units in one pack. 1 means the item is not sold in packs. */
+  packSize: number
+  packPrice: number
   deposit: number
   condition: 'excellent' | 'good' | 'fair' | 'poor'
   lowStockThreshold: number
@@ -158,6 +194,11 @@ export function toInventoryItem(e: EquipmentOut): InventoryItem {
     category: e.category,
     barcode: e.barcode,
     price: money(e.rental_price),
+    salePrice: money(e.sale_price),
+    forRent: e.for_rent ?? true,
+    forSale: e.for_sale ?? false,
+    packSize: e.pack_size ?? 1,
+    packPrice: money(e.pack_price),
     deposit: money(e.deposit),
     condition: e.condition ?? 'good',
     lowStockThreshold: e.low_stock_threshold ?? 3,
@@ -186,31 +227,66 @@ export const queryKeys = {
   sports: ['sports'] as const,
   courts: (sportId?: string) => ['courts', sportId ?? 'all'] as const,
   bookings: (page: number) => ['bookings', page] as const,
+  bookingsForDay: (dayISO: string) => ['bookings', 'day', dayISO] as const,
+  invoices: (status?: string) => ['invoices', status ?? 'all'] as const,
   inventory: ['inventory'] as const,
   movements: (equipmentId: string) => ['movements', equipmentId] as const,
 }
 
-/** Sports, with each one's court count folded in for the "N Courts" label. */
-export function useSports() {
-  const courts = useQuery({ queryKey: queryKeys.courts(), queryFn: () => api.listCourts() })
+/** Everything POS touches, invalidated together. Issuing kit against a booking
+ *  moves stock and changes what the court shows, so these three travel as a set. */
+function invalidatePos(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['bookings'] })
+  qc.invalidateQueries({ queryKey: ['invoices'] })
+  qc.invalidateQueries({ queryKey: queryKeys.inventory })
+  qc.invalidateQueries({ queryKey: ['courts'] })
+}
 
+/**
+ * Sports, with each one's court count folded in for the "N Courts" label.
+ *
+ * The count is applied with `select` rather than inside `queryFn`, and the query
+ * key is a constant. Deriving the key from `courts.data?.length` — as this used to
+ * — meant it changed from `['sports', 0]` to `['sports', 8]` the moment courts
+ * arrived, which React Query correctly treats as a different query and fetches
+ * again. Every screen mounting this paid for two `/sports` round trips.
+ */
+export function useSports() {
+  const courts = useAllCourts()
+
+  const sports = useQuery({
+    queryKey: queryKeys.sports,
+    queryFn: () => api.listSports(),
+  })
+
+  const counts = new Map<string, number>()
+  for (const c of courts.data ?? []) counts.set(c.sportId, (counts.get(c.sportId) ?? 0) + 1)
+
+  return {
+    ...sports,
+    data: sports.data?.map((s) => toSport(s, counts.get(s.id) ?? 0)),
+  }
+}
+
+/** Every court, unfiltered — the one query the whole app shares. */
+export function useAllCourts() {
   return useQuery({
-    queryKey: [...queryKeys.sports, courts.data?.length ?? 0],
-    queryFn: async () => {
-      const sports = await api.listSports()
-      const counts = new Map<string, number>()
-      for (const c of courts.data ?? []) counts.set(c.sport_id, (counts.get(c.sport_id) ?? 0) + 1)
-      return sports.map((s) => toSport(s, counts.get(s.id) ?? 0))
-    },
-    enabled: !courts.isLoading,
+    queryKey: queryKeys.courts(),
+    queryFn: async () => (await api.listCourts()).map(toCourt),
   })
 }
 
+/**
+ * Courts for one sport. Filtered from the shared unfiltered query rather than
+ * refetched per sport: a venue has tens of courts, so slicing them client-side
+ * costs nothing and saves a round trip every time the sport selection changes.
+ */
 export function useCourts(sportId?: string) {
-  return useQuery({
-    queryKey: queryKeys.courts(sportId),
-    queryFn: async () => (await api.listCourts(sportId ? { sport_id: sportId } : undefined)).map(toCourt),
-  })
+  const all = useAllCourts()
+  return {
+    ...all,
+    data: sportId ? all.data?.filter((c) => c.sportId === sportId) : all.data,
+  }
 }
 
 /** Returns the page envelope with `items` already mapped to the UI's Booking shape. */
@@ -221,6 +297,203 @@ export function useBookings(page = 1, size = 50) {
       const res = await api.listBookings({ page, size })
       return { ...res, items: (res.items ?? []).map(toBooking) }
     },
+  })
+}
+
+/**
+ * Today's bookings, for the Active Courts board.
+ *
+ * Bounded by *local* midnight converted to an instant, not by a date string: the
+ * API stores absolute times, and an evening slot in IST belongs to today here
+ * while already being tomorrow in UTC.
+ */
+export function useTodaysBookings() {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+  const dayISO = toISO(start)
+
+  return useQuery({
+    queryKey: queryKeys.bookingsForDay(dayISO),
+    queryFn: async () => {
+      const res = await api.listBookings({
+        date_from: start.toISOString(),
+        date_to: end.toISOString(),
+        size: 200,
+      })
+      // Cancelled bookings are dropped here, not in the UI, because `balance_due`
+      // is `total - amount_paid` on every row regardless of status — so a cancelled
+      // unpaid booking still reports money owed. It is not on the board and nobody
+      // is going to collect it. Filtered before `toBooking` because that mapping
+      // folds `cancelled` into `completed` and the distinction is gone after it.
+      return (res.items ?? []).filter((b) => b.status !== 'cancelled').map(toBooking)
+    },
+    // The board shows who is on court right now, so it should not go stale the way
+    // the reference data does.
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  })
+}
+
+export type OutstandingTab = {
+  id: string
+  invoiceNo: string
+  customerName: string
+  subtotal: number
+  gst: number
+  total: number
+  amountPaid: number
+  balance: number
+  /** Invoice lines are free text, not equipment ids — an ad-hoc sale can bill
+   *  something that was never in the catalogue. */
+  items: { description: string; qty: number; amount: number }[]
+}
+
+/**
+ * Counter tabs — invoices with money still on them and **no booking behind them**.
+ *
+ * That filter is load-bearing, not tidiness. Invoicing a booking produces an
+ * invoice carrying the same balance as the booking itself, so counting both would
+ * report every unpaid game twice: three unpaid bookings totalling ₹2,808 rendered
+ * as ₹5,616. A tab is by definition the sale that had no court attached.
+ */
+export function useOutstandingInvoices() {
+  return useQuery({
+    queryKey: queryKeys.invoices('outstanding'),
+    queryFn: async (): Promise<OutstandingTab[]> => {
+      const res = await api.listInvoices({ size: 200 })
+      return (res.items ?? [])
+        .filter((i) => !i.booking_id)
+        .map((i) => ({
+          id: i.id,
+          invoiceNo: i.invoice_no,
+          customerName: i.customer_name,
+          subtotal: money(i.subtotal),
+          gst: money(i.gst),
+          total: money(i.total),
+          amountPaid: money(i.amount_paid),
+          balance: money(i.balance_due),
+          items: ((i.items ?? []) as Record<string, unknown>[]).map((line) => ({
+            description: String(line.description ?? ''),
+            qty: Number(line.qty ?? 1),
+            amount: money(line.amount as string | number),
+          })),
+        }))
+        .filter((i) => i.balance > 0)
+    },
+    staleTime: 15_000,
+  })
+}
+
+/** Check in, or finish early. The UI's vocabulary in, the API's out. */
+export function useSetBookingStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { bookingId: string; status: Booking['status'] }) =>
+      api.updateBooking(vars.bookingId, { status: API_BOOKING_STATUS[vars.status] }),
+    onSuccess: () => invalidatePos(qc),
+  })
+}
+
+/** 409 when another booking already follows — the server decides, not the client. */
+export function useExtendBooking() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { bookingId: string; minutes?: number }) =>
+      api.extendBooking(vars.bookingId, vars.minutes ?? 60),
+    onSuccess: () => invalidatePos(qc),
+  })
+}
+
+/** Hand one item to a booking. Goes through the movement ledger, which is what
+ *  keeps `qty_available` honest rather than a counter someone has to remember. */
+export function useIssueKit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { equipmentId: string; bookingId?: string; qty?: number }) =>
+      api.createMovement(vars.equipmentId, {
+        kind: 'issue',
+        qty: vars.qty ?? 1,
+        booking_id: vars.bookingId,
+      }),
+    onSuccess: () => invalidatePos(qc),
+  })
+}
+
+/**
+ * A counter sale: an invoice with no booking attached, plus the stock movements
+ * for what left the shelf, plus payment if it was settled on the spot.
+ *
+ * Sequential rather than parallel because the invoice id is needed to record the
+ * payment against it. Movements are issued after the invoice exists so a failed
+ * invoice does not silently decrement stock.
+ */
+export function useOpenCounterTab() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: {
+      customerName: string
+      tray: Record<string, number>
+      lines: { description: string; qty: number; rate: number; amount: number }[]
+      payNow: boolean
+      method?: 'cash' | 'upi' | 'card'
+      notes?: string
+    }) => {
+      const invoice = await api.createInvoice({
+        customer_name: vars.customerName,
+        items: vars.lines,
+        notes: vars.notes,
+      })
+
+      for (const [equipmentId, qty] of Object.entries(vars.tray)) {
+        if (qty > 0) await api.createMovement(equipmentId, { kind: 'issue', qty })
+      }
+
+      if (vars.payNow) {
+        await api.recordPayment({
+          invoice_id: invoice.id,
+          amount: Number(invoice.total ?? 0),
+          method: vars.method ?? 'upi',
+        })
+      }
+      return invoice
+    },
+    onSuccess: () => invalidatePos(qc),
+  })
+}
+
+/**
+ * Add kit to a game already in progress.
+ *
+ * Two calls, both needed: PATCH re-prices the booking so the customer is billed,
+ * but it does not touch stock — the movement ledger is a separate concern and the
+ * endpoint deliberately does not guess. Issuing the movements is what makes
+ * `qty_available` correct.
+ */
+export function useAttachKitToBooking() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { bookingId: string; existing: Record<string, number>; add: Record<string, number> }) => {
+      const merged: Record<string, number> = { ...vars.existing }
+      for (const [id, qty] of Object.entries(vars.add)) merged[id] = (merged[id] ?? 0) + qty
+
+      await api.updateBooking(vars.bookingId, {
+        equipment: Object.entries(merged)
+          .filter(([, qty]) => qty > 0)
+          .map(([equipment_id, qty]) => ({ equipment_id, qty })),
+      })
+
+      for (const [equipmentId, qty] of Object.entries(vars.add)) {
+        if (qty > 0)
+          await api.createMovement(equipmentId, {
+            kind: 'issue',
+            qty,
+            booking_id: vars.bookingId,
+          })
+      }
+    },
+    onSuccess: () => invalidatePos(qc),
   })
 }
 
@@ -243,7 +516,10 @@ export function draftToBookingPayload(draft: Draft) {
     duration_min: draft.hours * 60,
     equipment: Object.entries(draft.equipment)
       .filter(([, qty]) => qty > 0)
-      .map(([equipment_id, qty]) => ({ equipment_id, qty })),
+      .map(([key, qty]) => {
+        const { id, mode, unit } = parseAddOnKey(key)
+        return { equipment_id: id, qty, mode, unit }
+      }),
   }
 }
 
@@ -296,9 +572,19 @@ export function useCreateBooking() {
 export function useRecordPayment() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (vars: { bookingId: string; amount: number; method: 'cash' | 'upi' | 'card' | 'bank' | 'cheque' }) =>
-      api.recordPayment({ booking_id: vars.bookingId, amount: vars.amount, method: vars.method }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['bookings'] }),
+    mutationFn: (vars: {
+      amount: number
+      method: 'cash' | 'upi' | 'card' | 'bank' | 'cheque'
+      bookingId?: string
+      invoiceId?: string
+    }) =>
+      api.recordPayment({
+        booking_id: vars.bookingId,
+        invoice_id: vars.invoiceId,
+        amount: vars.amount,
+        method: vars.method,
+      }),
+    onSuccess: () => invalidatePos(qc),
   })
 }
 
@@ -325,6 +611,11 @@ export function useCreateInventoryItem() {
       barcode: string
       price: number
       deposit: number
+      salePrice: number
+      forRent: boolean
+      forSale: boolean
+      packSize: number
+      packPrice: number
       condition: InventoryItem['condition']
       lowStockThreshold: number
       sportId: string | null
@@ -339,6 +630,11 @@ export function useCreateInventoryItem() {
         barcode: vars.barcode,
         rental_price: vars.price,
         deposit: vars.deposit,
+        sale_price: vars.salePrice,
+        for_rent: vars.forRent,
+        for_sale: vars.forSale,
+        pack_size: vars.packSize,
+        pack_price: vars.packPrice,
         condition: vars.condition,
         low_stock_threshold: vars.lowStockThreshold,
         sport_id: vars.sportId,
@@ -361,6 +657,11 @@ export function useUpdateInventoryItem() {
         category: string
         price: number
         deposit: number
+        salePrice: number
+        forRent: boolean
+        forSale: boolean
+        packSize: number
+        packPrice: number
         condition: InventoryItem['condition']
         lowStockThreshold: number
         sportId: string | null
@@ -374,6 +675,11 @@ export function useUpdateInventoryItem() {
         category: vars.patch.category,
         rental_price: vars.patch.price,
         deposit: vars.patch.deposit,
+        sale_price: vars.patch.salePrice,
+        for_rent: vars.patch.forRent,
+        for_sale: vars.patch.forSale,
+        pack_size: vars.patch.packSize,
+        pack_price: vars.patch.packPrice,
         condition: vars.patch.condition,
         low_stock_threshold: vars.patch.lowStockThreshold,
         sport_id: vars.patch.sportId,

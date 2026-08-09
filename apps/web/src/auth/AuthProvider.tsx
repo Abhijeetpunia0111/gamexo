@@ -20,7 +20,15 @@ const AuthContext = createContext<AuthState | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null)
-  const [status, setStatus] = useState<AuthState['status']>('checking')
+  // Holding a token is treated as signed in until proven otherwise, so the shell
+  // renders immediately and its screens start fetching in parallel with /auth/me.
+  // Blocking on it meant a slow `me` froze the entire app behind a spinner — and
+  // `me` is the request most likely to be slow, because it is the one that wakes
+  // a scale-to-zero database. A token that turns out to be invalid drops to the
+  // login screen a moment later, which is the rare case, not the common one.
+  const [status, setStatus] = useState<AuthState['status']>(() =>
+    getTokens()?.access_token ? 'authenticated' : 'anonymous',
+  )
 
   const loadMe = useCallback(async () => {
     if (!getTokens()?.access_token) {

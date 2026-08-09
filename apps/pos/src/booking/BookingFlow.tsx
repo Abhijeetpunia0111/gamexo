@@ -6,6 +6,7 @@ import SelectSportCourt from './steps/SelectSportCourt'
 import DateTime from './steps/DateTime'
 import PlayerDetails from './steps/PlayerDetails'
 import AddOns from './steps/AddOns'
+import { traySelections } from './offers'
 import PaymentStep from './steps/PaymentStep'
 import Confirmation from './steps/Confirmation'
 import { ApiError } from '../api/client'
@@ -75,7 +76,7 @@ export default function BookingFlow({ onDone, initialCourtId }: { onDone: () => 
     if (!draft.courtId || !draft.date || draft.startHour == null) return
     setError(null)
     try {
-      const equipment = Object.entries(draft.equipment).map(([equipment_id, qty]) => ({ equipment_id, qty }))
+      const equipment = traySelections(draft.equipment)
       const booking = await createBooking.mutateAsync({
         courtId: draft.courtId,
         startsAt: startsAtISO(draft.date, draft.startHour),

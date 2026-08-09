@@ -91,10 +91,23 @@ export function setCourtCatalog(items: Court[]) {
   COURTS.push(...items)
 }
 
+/** How one add-on line was chosen. Mirrors the API's EquipmentSelection: a pack is
+ *  always a purchase, because packs have one price and rentals are per unit. */
+export type AddOnMode = 'rent' | 'buy'
+export type AddOnUnit = 'single' | 'pack'
+
 export type Equipment = {
   id: string
   name: string
+  /** The rental rate. `price` rather than `rentalPrice` because every existing
+   *  screen already reads it under this name. */
   price: number
+  salePrice: number
+  forRent: boolean
+  forSale: boolean
+  /** Base units per pack; 1 means this item is not sold in packs. */
+  packSize: number
+  packPrice: number
   sports: string[]
   hint: string
   stock: number
@@ -103,25 +116,43 @@ export type Equipment = {
   deposit?: number
 }
 
-/** Seed data — shown only until the real, published Inventory catalogue loads and
- *  overwrites these contents in place (see `setEquipmentCatalog` and
- *  `inventory/PublishedEquipmentBridge.tsx`). Every shop-facing screen (Add-ons,
- *  the walk-in booking flow, Active Courts' kit panel) reads through functions
- *  further down this file, never this array directly, so the swap is invisible
- *  to them. */
+/** The price of one unit of a given choice, and how much stock it draws. */
+export function addOnRate(item: Equipment, mode: AddOnMode, unit: AddOnUnit): number {
+  if (unit === 'pack') return item.packPrice
+  return mode === 'buy' ? item.salePrice : item.price
+}
+
+export function addOnUnitsDrawn(item: Equipment, qty: number, unit: AddOnUnit): number {
+  return unit === 'pack' ? qty * Math.max(1, item.packSize) : qty
+}
+
+/** Fills in the buy/rent and pack fields for the seed rows, which predate them.
+ *  Returnable kit rents; the rest sells at the same price it was already shown at,
+ *  which is what the API's own backfill does to the real catalogue. */
+const seed = (
+  row: Omit<Equipment, 'salePrice' | 'forRent' | 'forSale' | 'packSize' | 'packPrice'>,
+): Equipment => ({
+  ...row,
+  salePrice: row.returnable ? 0 : row.price,
+  forRent: true,
+  forSale: !row.returnable,
+  packSize: 1,
+  packPrice: 0,
+})
+
 export const EQUIPMENT: Equipment[] = [
-  { id: 'shoes', name: 'Studs / Shoes', price: 120, sports: ['football', 'cricket'], hint: 'Sizes 5–12', stock: 24, returnable: true, deposit: 300 },
-  { id: 'football', name: 'Football', price: 250, sports: ['football'], hint: 'Size 5, match ball', stock: 12, returnable: false },
-  { id: 'bib', name: 'Team Bibs', price: 60, sports: ['football'], hint: 'Set of 7', stock: 40, returnable: true, deposit: 200 },
-  { id: 'racket', name: 'Racket', price: 80, sports: ['badminton', 'tennis', 'pickleball'], hint: 'Strung', stock: 20, returnable: true, deposit: 400 },
-  { id: 'shuttle', name: 'Shuttlecock', price: 40, sports: ['badminton'], hint: 'Tube of 3', stock: 60, returnable: false },
-  { id: 'bat', name: 'Cricket Bat', price: 200, sports: ['cricket'], hint: 'English willow', stock: 10, returnable: true, deposit: 500 },
-  { id: 'pads', name: 'Pads & Gloves', price: 150, sports: ['cricket'], hint: 'Batting set', stock: 8, returnable: true, deposit: 400 },
-  { id: 'paddle', name: 'Paddle', price: 90, sports: ['pickleball', 'tabletennis'], hint: 'Composite face', stock: 14, returnable: true, deposit: 300 },
-  { id: 'coach', name: 'Coach', price: 500, sports: ['football', 'cricket', 'tennis', 'badminton'], hint: 'Per hour, book ahead', stock: 3, returnable: false },
-  { id: 'towel', name: 'Towel', price: 30, sports: [], hint: 'Fresh, cotton', stock: 50, returnable: false },
-  { id: 'bottle', name: 'Water Bottle', price: 20, sports: [], hint: '1 litre, chilled', stock: 100, returnable: false },
-  { id: 'locker', name: 'Locker', price: 50, sports: [], hint: 'For the full slot', stock: 30, returnable: true, deposit: 200 },
+  seed({ id: 'shoes', name: 'Studs / Shoes', price: 120, sports: ['football', 'cricket'], hint: 'Sizes 5–12', stock: 24, returnable: true, deposit: 300 }),
+  seed({ id: 'football', name: 'Football', price: 250, sports: ['football'], hint: 'Size 5, match ball', stock: 12, returnable: false }),
+  seed({ id: 'bib', name: 'Team Bibs', price: 60, sports: ['football'], hint: 'Set of 7', stock: 40, returnable: true, deposit: 200 }),
+  seed({ id: 'racket', name: 'Racket', price: 80, sports: ['badminton', 'tennis', 'pickleball'], hint: 'Strung', stock: 20, returnable: true, deposit: 400 }),
+  seed({ id: 'shuttle', name: 'Shuttlecock', price: 40, sports: ['badminton'], hint: 'Tube of 3', stock: 60, returnable: false }),
+  seed({ id: 'bat', name: 'Cricket Bat', price: 200, sports: ['cricket'], hint: 'English willow', stock: 10, returnable: true, deposit: 500 }),
+  seed({ id: 'pads', name: 'Pads & Gloves', price: 150, sports: ['cricket'], hint: 'Batting set', stock: 8, returnable: true, deposit: 400 }),
+  seed({ id: 'paddle', name: 'Paddle', price: 90, sports: ['pickleball', 'tabletennis'], hint: 'Composite face', stock: 14, returnable: true, deposit: 300 }),
+  seed({ id: 'coach', name: 'Coach', price: 500, sports: ['football', 'cricket', 'tennis', 'badminton'], hint: 'Per hour, book ahead', stock: 3, returnable: false }),
+  seed({ id: 'towel', name: 'Towel', price: 30, sports: [], hint: 'Fresh, cotton', stock: 50, returnable: false }),
+  seed({ id: 'bottle', name: 'Water Bottle', price: 20, sports: [], hint: '1 litre, chilled', stock: 100, returnable: false }),
+  seed({ id: 'locker', name: 'Locker', price: 50, sports: [], hint: 'For the full slot', stock: 30, returnable: true, deposit: 200 }),
 ]
 
 /** Repoints the shared catalogue at what Inventory has actually published, in
@@ -289,21 +320,58 @@ export const emptyDraft = (): Draft => ({
   payment: null,
 })
 
-export function equipmentLines(equipment: Record<string, number>) {
+/**
+ * A tray key encodes *which offer* was picked, not just which item: renting a
+ * racket and buying one are two lines at two prices and must not collapse into
+ * each other. Encoded into the existing `Record<string, number>` rather than
+ * changing the shape, so every screen that reads a tray keeps working — only the
+ * two functions here and the API payload builder need to know the format.
+ *
+ * A bare id (no separators) still parses, which is what a booking loaded from the
+ * API or an older draft looks like.
+ */
+export function addOnKey(id: string, mode: AddOnMode = 'rent', unit: AddOnUnit = 'single') {
+  return `${id}|${mode}|${unit}`
+}
+
+export function parseAddOnKey(key: string): { id: string; mode: AddOnMode; unit: AddOnUnit } {
+  const [id, mode, unit] = key.split('|')
+  return {
+    id,
+    mode: mode === 'buy' ? 'buy' : 'rent',
+    unit: unit === 'pack' ? 'pack' : 'single',
+  }
+}
+
+/**
+ * `hours` is how long the session runs, because renting is charged per hour of
+ * play — matching `EquipmentLine.charge_for` on the server. Purchases and packs
+ * ignore it. Defaults to 1 for the counter tray, which has no booking behind it.
+ */
+export function equipmentLines(equipment: Record<string, number>, hours = 1) {
   return Object.entries(equipment)
     .filter(([, qty]) => qty > 0)
-    .map(([id, qty]) => {
+    .map(([key, qty]) => {
+      const { id, mode, unit } = parseAddOnKey(key)
       // The catalogue is live now (see setEquipmentCatalog) — an older booking can
       // reference an id that's since been unpublished or removed. Show it as a
       // priceless line rather than crashing the screen it's rendered on.
       const item = EQUIPMENT.find((e) => e.id === id)
-      return { id, name: item?.name ?? 'Removed item', qty, amount: (item?.price ?? 0) * qty }
+      const suffix =
+        unit === 'pack' ? ` (pack of ${item?.packSize ?? 1})` : mode === 'buy' ? ' (purchase)' : ''
+      const billedUnits = mode === 'rent' ? qty * hours : qty
+      return {
+        id: key,
+        name: `${item?.name ?? 'Removed item'}${suffix}`,
+        qty,
+        amount: Math.round((item ? addOnRate(item, mode, unit) : 0) * billedUnits),
+      }
     })
 }
 
 /** One pricing function for kit alone — the counter tray, or a booking's add-ons. */
-export function priceEquipment(equipment: Record<string, number>) {
-  const lines = equipmentLines(equipment)
+export function priceEquipment(equipment: Record<string, number>, hours = 1) {
+  const lines = equipmentLines(equipment, hours)
   const equipmentTotal = lines.reduce((sum, l) => sum + l.amount, 0)
   const gst = Math.round(equipmentTotal * GST_RATE)
   return { lines, equipmentTotal, gst, total: equipmentTotal + gst }
@@ -312,7 +380,7 @@ export function priceEquipment(equipment: Record<string, number>) {
 export function priceDraft(draft: Draft) {
   const court = draft.courtId ? courtById(draft.courtId) : null
   const slotTotal = (court?.price || 0) * draft.hours
-  const { lines, equipmentTotal } = priceEquipment(draft.equipment)
+  const { lines, equipmentTotal } = priceEquipment(draft.equipment, draft.hours)
   const subtotal = slotTotal + equipmentTotal
   const gst = Math.round(subtotal * GST_RATE)
   return { slotTotal, lines, equipmentTotal, subtotal, gst, total: subtotal + gst }
@@ -379,7 +447,7 @@ export function withExtras(booking: Booking, add: Record<string, number>): Booki
     if (next > 0) equipment[id] = next
     else delete equipment[id]
   }
-  const { equipmentTotal } = priceEquipment(equipment)
+  const { equipmentTotal } = priceEquipment(equipment, booking.hours)
   const subtotal = booking.slotTotal + equipmentTotal
   const gst = Math.round(subtotal * GST_RATE)
   return { ...booking, equipment, equipmentTotal, subtotal, gst, total: subtotal + gst }

@@ -13,6 +13,8 @@ from app.modules.booking.models import (
     BookingStatus,
     BookingType,
     EquipmentCondition,
+    EquipmentMode,
+    EquipmentUnit,
     Gender,
     MemberType,
     MembershipTier,
@@ -146,6 +148,11 @@ class EquipmentBase(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     category: str = Field(min_length=1, max_length=100)
     rental_price: Decimal = Field(default=Decimal("0"), ge=0)
+    sale_price: Decimal = Field(default=Decimal("0"), ge=0)
+    for_rent: bool = True
+    for_sale: bool = False
+    pack_size: int = Field(default=1, ge=1, description="Base units in one pack")
+    pack_price: Decimal = Field(default=Decimal("0"), ge=0)
     deposit: Decimal = Field(default=Decimal("0"), ge=0)
     condition: EquipmentCondition = EquipmentCondition.GOOD
     low_stock_threshold: int = Field(default=3, ge=0)
@@ -153,6 +160,16 @@ class EquipmentBase(BaseModel):
     published_to_pos: bool = True
     image_url: str | None = None
     consumable: bool = True
+
+    @model_validator(mode="after")
+    def _offered_somehow(self) -> EquipmentBase:
+        if not (self.for_rent or self.for_sale):
+            raise ValueError("Equipment must be available to rent, to buy, or both.")
+        # A pack that is not for sale can never be chosen — packs are bought, not
+        # rented — so it is a configuration mistake worth naming at the source.
+        if self.pack_size > 1 and not self.for_sale:
+            raise ValueError("Pack sizes above 1 require the item to be for sale.")
+        return self
 
 
 class EquipmentCreate(EquipmentBase):
@@ -164,6 +181,11 @@ class EquipmentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
     category: str | None = None
     rental_price: Decimal | None = Field(default=None, ge=0)
+    sale_price: Decimal | None = Field(default=None, ge=0)
+    for_rent: bool | None = None
+    for_sale: bool | None = None
+    pack_size: int | None = Field(default=None, ge=1)
+    pack_price: Decimal | None = Field(default=None, ge=0)
     deposit: Decimal | None = Field(default=None, ge=0)
     condition: EquipmentCondition | None = None
     low_stock_threshold: int | None = Field(default=None, ge=0)
@@ -270,8 +292,26 @@ class CustomerDetail(CustomerOut):
 
 
 class EquipmentSelection(BaseModel):
+    """One add-on line on a booking.
+
+    `qty` counts whatever `unit` says: two packs, or two loose balls. Defaults keep
+    every existing caller working unchanged — renting single units is what the
+    booking flow has always done.
+    """
+
     equipment_id: uuid.UUID
     qty: int = Field(gt=0, le=100)
+    mode: EquipmentMode = EquipmentMode.RENT
+    unit: EquipmentUnit = EquipmentUnit.SINGLE
+
+    @model_validator(mode="after")
+    def _packs_are_bought_not_rented(self) -> EquipmentSelection:
+        # Renting "a pack" has no meaning the pricing model can honour — a pack has
+        # one price and rentals are per unit per session. Rejecting it here beats
+        # silently charging the single rate for three balls.
+        if self.unit is EquipmentUnit.PACK and self.mode is not EquipmentMode.BUY:
+            raise ValueError("Packs can only be bought, not rented.")
+        return self
 
 
 class BookingCreate(BaseModel):
@@ -328,6 +368,11 @@ class EquipmentLineOut(BaseModel):
     name: str
     qty: int
     rate: Decimal
+    #: None on bookings written before this was recorded. A client editing a
+    #: booking's kit needs the id — names alone cannot identify what to keep.
+    equipment_id: uuid.UUID | None = None
+    mode: EquipmentMode = EquipmentMode.RENT
+    unit: EquipmentUnit = EquipmentUnit.SINGLE
 
 
 class BookingOut(BaseModel):
