@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy import func, select
@@ -51,9 +52,57 @@ BUSINESS_PROFILE = {
 }
 
 
-async def _seed_platform_admin() -> None:
+@dataclass(frozen=True, slots=True)
+class SeedIdentity:
+    """The academy to create and the two logins that open it.
+
+    Read from the environment every time rather than defaulted in `core/config.py`,
+    so no credential in this repository ever works against a running deployment.
+    """
+
+    tenant_slug: str
+    tenant_name: str
+    admin_email: str
+    admin_password: str
+    platform_admin_email: str
+    platform_admin_password: str
+
+
+def _identity() -> SeedIdentity:
+    """Read SEED_* from the environment, or stop and say exactly what is missing.
+
+    Every absent name is reported together: filling in .env should be one pass, not
+    six runs that each reveal the next thing.
+    """
+    required = {
+        "SEED_TENANT_SLUG": settings.seed_tenant_slug,
+        "SEED_TENANT_NAME": settings.seed_tenant_name,
+        "SEED_ADMIN_EMAIL": settings.seed_admin_email,
+        "SEED_ADMIN_PASSWORD": settings.seed_admin_password,
+        "SEED_PLATFORM_ADMIN_EMAIL": settings.seed_platform_admin_email,
+        "SEED_PLATFORM_ADMIN_PASSWORD": settings.seed_platform_admin_password,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise SystemExit(
+            "Cannot seed — these are unset, and have no default in code by design:\n"
+            + "".join(f"    {name}\n" for name in missing)
+            + "Set them in apps/api/.env (see .env.example) and run again."
+        )
+
+    return SeedIdentity(
+        tenant_slug=str(settings.seed_tenant_slug),
+        tenant_name=str(settings.seed_tenant_name),
+        admin_email=str(settings.seed_admin_email),
+        admin_password=settings.seed_admin_password.get_secret_value(),
+        platform_admin_email=str(settings.seed_platform_admin_email),
+        platform_admin_password=settings.seed_platform_admin_password.get_secret_value(),
+    )
+
+
+async def _seed_platform_admin(identity: SeedIdentity) -> None:
     async with untenanted_session() as session:
-        email = settings.seed_platform_admin_email.lower()
+        email = identity.platform_admin_email.lower()
         existing = await session.execute(
             select(PlatformAdmin).where(func.lower(PlatformAdmin.email) == email)
         )
@@ -64,18 +113,16 @@ async def _seed_platform_admin() -> None:
         session.add(
             PlatformAdmin(
                 email=email,
-                password_hash=hash_password(settings.seed_platform_admin_password),
+                password_hash=hash_password(identity.platform_admin_password),
                 full_name="gamexo Operations",
             )
         )
         print(f"  created platform admin {email}")
 
 
-async def _seed_tenant() -> uuid.UUID:
+async def _seed_tenant(identity: SeedIdentity) -> uuid.UUID:
     async with untenanted_session() as session:
-        existing = await session.execute(
-            select(Tenant).where(Tenant.slug == settings.seed_tenant_slug)
-        )
+        existing = await session.execute(select(Tenant).where(Tenant.slug == identity.tenant_slug))
         tenant = existing.scalar_one_or_none()
         if tenant is not None:
             print(f"  tenant '{tenant.slug}' already exists")
@@ -83,10 +130,10 @@ async def _seed_tenant() -> uuid.UUID:
 
         tenant, admin = await provision_tenant(
             session,
-            slug=settings.seed_tenant_slug,
-            name=settings.seed_tenant_name,
-            admin_email=settings.seed_admin_email,
-            admin_password=settings.seed_admin_password,
+            slug=identity.tenant_slug,
+            name=identity.tenant_name,
+            admin_email=identity.admin_email,
+            admin_password=identity.admin_password,
             admin_full_name="XCourt Administrator",
             business_name=BUSINESS_PROFILE["business_name"],
         )
@@ -94,7 +141,7 @@ async def _seed_tenant() -> uuid.UUID:
         return tenant.id
 
 
-async def _seed_tenant_data(tenant_id: uuid.UUID) -> None:
+async def _seed_tenant_data(tenant_id: uuid.UUID, identity: SeedIdentity) -> None:
     """Fill in the academy's profile and staff, through a tenant-bound session."""
     async with tenant_session(tenant_id) as session:
         # RLS means this query cannot see another academy's settings even though it
@@ -122,7 +169,7 @@ async def _seed_tenant_data(tenant_id: uuid.UUID) -> None:
             session.add(
                 User(
                     email=email,
-                    password_hash=hash_password(settings.seed_admin_password),
+                    password_hash=hash_password(identity.admin_password),
                     full_name=name,
                     role=role,
                     phone=phone,
@@ -149,20 +196,24 @@ async def _seed_domain(tenant_id: uuid.UUID, prefix: str) -> None:
 
 
 async def main() -> None:
+    # Before opening a connection: a missing password should fail in the first
+    # millisecond, not after the platform admin is already written.
+    identity = _identity()
+
     print("Seeding gamexo…")
-    await _seed_platform_admin()
-    tenant_id = await _seed_tenant()
-    prefix = await _seed_tenant_data(tenant_id)
+    await _seed_platform_admin(identity)
+    tenant_id = await _seed_tenant(identity)
+    prefix = await _seed_tenant_data(tenant_id, identity)
     await _seed_domain(tenant_id, prefix or "XC")
     await dispose_engine()
 
     print(
         "\nDone.\n"
-        f"  Academy      : {settings.seed_tenant_name} ({settings.seed_tenant_slug})\n"
-        f"  Staff login  : {settings.seed_admin_email} / {settings.seed_admin_password}\n"
-        f"  Platform     : {settings.seed_platform_admin_email} / "
-        f"{settings.seed_platform_admin_password}\n"
-        f"  Try          : curl -H 'X-Tenant-ID: {settings.seed_tenant_slug}' "
+        f"  Academy      : {identity.tenant_name} ({identity.tenant_slug})\n"
+        f"  Staff login  : {identity.admin_email}\n"
+        f"  Platform     : {identity.platform_admin_email}\n"
+        "  Passwords    : as set in SEED_ADMIN_PASSWORD / SEED_PLATFORM_ADMIN_PASSWORD\n"
+        f"  Try          : curl -H 'X-Tenant-ID: {identity.tenant_slug}' "
         "http://localhost:8000/api/v1/health/tenant"
     )
 

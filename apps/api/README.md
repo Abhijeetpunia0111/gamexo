@@ -20,7 +20,9 @@ The repo is a turborepo: the frontend is `apps/web`, this API is `apps/api`.
 # tenant #1 is resolved, no auth needed
 curl -H 'X-Tenant-ID: xcourt' http://localhost:8000/api/v1/health/tenant
 
-# staff login
+# staff login — whatever SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD were set to.
+# The values below are docker-compose.yml's; the seed script has no built-in
+# credentials and refuses to run until both are set.
 curl -H 'X-Tenant-ID: xcourt' -H 'Content-Type: application/json' \
      -d '{"email":"admin@xcourtsports.com","password":"xcourt-admin-dev"}' \
      http://localhost:8000/api/v1/auth/login

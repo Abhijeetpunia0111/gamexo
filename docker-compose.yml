@@ -50,6 +50,15 @@ services:
       CORS_ORIGINS: '["http://localhost:8443","http://localhost:5173","http://localhost:5174"]'
       RUN_MIGRATIONS_ON_START: "true"
       RUN_SEED_ON_START: "true"
+      # The seed script has no built-in credentials — every deployment names its own,
+      # so nothing in the repo is a working password anywhere. These are this compose
+      # file's, and this compose file is local-only.
+      SEED_TENANT_SLUG: xcourt
+      SEED_TENANT_NAME: XCourt Sports
+      SEED_ADMIN_EMAIL: admin@xcourtsports.com
+      SEED_ADMIN_PASSWORD: xcourt-admin-dev
+      SEED_PLATFORM_ADMIN_EMAIL: ops@gamexo.app
+      SEED_PLATFORM_ADMIN_PASSWORD: gamexo-platform-dev
     ports:
       - "8000:8000"
     volumes:

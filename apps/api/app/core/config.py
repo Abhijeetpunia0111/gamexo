@@ -104,12 +104,12 @@ class Settings(BaseSettings):
         return "smtp" if self.smtp_host else "none"
 
     # ── Seed ────────────────────────────────────────────────────────────────
-    seed_tenant_slug: str = "xcourt"
-    seed_tenant_name: str = "XCourt Sports"
-    seed_admin_email: str = "admin@xcourtsports.com"
-    seed_admin_password: str = "xcourt-admin-dev"
-    seed_platform_admin_email: str = "ops@gamexo.app"
-    seed_platform_admin_password: str = "gamexo-platform-dev"
+    seed_tenant_slug: str | None = None
+    seed_tenant_name: str | None = None
+    seed_admin_email: str | None = None
+    seed_admin_password: SecretStr | None = None
+    seed_platform_admin_email: str | None = None
+    seed_platform_admin_password: SecretStr | None = None
 
     @field_validator("database_url", "migration_database_url")
     @classmethod
