@@ -120,7 +120,6 @@ export default function StorePage({ onHome }: { onHome: () => void }) {
   // One card per offer: a shuttlecock is Rent / Buy / Pack of 6, three prices.
   const offers = items.flatMap(offersFor)
   const shown = category === 'All' ? offers : offers.filter((o) => o.item.category === category)
-  const gridColumns = Math.max(1, Math.ceil(shown.length / 2))
 
   /** Offers of one item share a stock pool — a pack of six leaves six fewer to rent. */
   const headroomFor = (offer: Offer) => {
@@ -142,10 +141,28 @@ export default function StorePage({ onHome }: { onHome: () => void }) {
   const clearTray = () => setTray({})
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <TopBar centerTitle="Shop" onLogoClick={onHome} />
 
-      <main className="flex flex-1 flex-col gap-[clamp(1.25rem,2.5vw,1.625rem)] px-[clamp(1.25rem,3vw,3rem)] py-[clamp(1rem,2vw,1.5rem)]">
+      {/* Filters sit outside the scroll region so they stay put while the shelf moves. */}
+      {items.length > 0 && (
+        <div className="flex w-full shrink-0 flex-wrap gap-[clamp(0.5rem,1.2vw,0.75rem)] px-[clamp(1.25rem,3vw,3rem)] pb-[clamp(0.5rem,1.4dvh,1rem)]">
+          {categories.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategory(c)}
+              className={`flex h-[clamp(2.25rem,4.5vw,3.25rem)] min-w-[85px] items-center justify-center rounded-xl px-[clamp(1rem,1.6vw,1.125rem)] text-[clamp(0.875rem,1vw,1rem)] font-semibold transition-colors ${
+                category === c ? 'bg-ink text-white' : 'bg-surface text-ink hover:bg-surface-muted'
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <main className="min-h-0 flex-1 overflow-y-auto px-[clamp(1.25rem,3vw,3rem)] pb-[clamp(0.75rem,2dvh,1.5rem)]">
         {equipmentQuery.isPending ? (
           <p className="text-sm text-muted">Loading inventory…</p>
         ) : equipmentQuery.error ? (
@@ -155,41 +172,26 @@ export default function StorePage({ onHome }: { onHome: () => void }) {
         ) : items.length === 0 ? (
           <p className="text-sm text-muted">No equipment configured for sale yet.</p>
         ) : (
-          <>
-            <div className="flex w-full flex-wrap gap-3">
-              {categories.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCategory(c)}
-                  className={`flex h-[clamp(2.75rem,4.5vw,3.25rem)] min-w-[85px] items-center justify-center rounded-xl px-[clamp(1rem,1.6vw,1.125rem)] text-[clamp(0.9375rem,1vw,1rem)] font-semibold transition-colors ${
-                    category === c ? 'bg-ink text-white' : 'bg-surface text-ink hover:bg-surface-muted'
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-
-            <div
-              className="grid grid-flow-col grid-rows-2 gap-[clamp(0.75rem,1.6vw,1rem)] overflow-x-auto pb-2"
-              style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(16rem, 1fr))` }}
-            >
-              {shown.map((offer) => {
-                const max = headroomFor(offer)
-                return (
-                  <ProductCard
-                    key={offer.key}
-                    offer={offer}
-                    qty={tray[offer.key] || 0}
-                    max={max}
-                    onAdd={() => setQty(offer.key, 1, max)}
-                    onQty={(qty) => setQty(offer.key, qty, max)}
-                  />
-                )
-              })}
-            </div>
-          </>
+          <div
+            /* auto-fill in landscape, so the shelf re-flows with however much width there is.
+               In portrait the tablet is narrow enough that auto-fill was cramming 5 tiny
+               columns in — pin it to 3 there instead, letting each card grow to fill the row. */
+            className="grid grid-cols-[repeat(auto-fill,minmax(clamp(8.5rem,15vw,12rem),1fr))] gap-[clamp(0.75rem,1.6vw,1rem)] portrait:grid-cols-3"
+          >
+            {shown.map((offer) => {
+              const max = headroomFor(offer)
+              return (
+                <ProductCard
+                  key={offer.key}
+                  offer={offer}
+                  qty={tray[offer.key] || 0}
+                  max={max}
+                  onAdd={() => setQty(offer.key, 1, max)}
+                  onQty={(qty) => setQty(offer.key, qty, max)}
+                />
+              )
+            })}
+          </div>
         )}
       </main>
 

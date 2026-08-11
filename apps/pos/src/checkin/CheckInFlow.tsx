@@ -104,10 +104,10 @@ export default function CheckInFlow({
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <TopBar centerTitle={TITLES[step]} onLogoClick={onHome} />
 
-      <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-[clamp(1.5rem,4vh,3rem)]">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-8 overflow-y-auto px-4 py-[clamp(1.5rem,4vh,3rem)]">
         {step === 'method' && <ChooseMethod onHaveBooking={goPhone} onBookNow={onBookNow} />}
 
         {step === 'phone' && (

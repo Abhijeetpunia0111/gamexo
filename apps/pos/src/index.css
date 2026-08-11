@@ -38,6 +38,28 @@ body,
   height: 100%;
 }
 
+/* iPad Safari sizes 100vh to the viewport with its chrome *collapsed*, so a vh-sized
+   shell is always taller than what the counter can actually see — the header rides up
+   and the footer falls off. dvh tracks the live chrome height; --app-height narrows it
+   further to the visual viewport while the on-screen keyboard is up (useViewportHeight),
+   since the keyboard overlays the layout viewport rather than resizing it. */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: var(--app-height, 100dvh);
+  }
+}
+
+/* The app owns every scroll region internally. Letting the document scroll on top of
+   that is what drags the fixed chrome out of view and bounces Safari's URL bar in and
+   out mid-gesture, which in turn keeps resizing the viewport. */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background: var(--color-page);
@@ -99,6 +121,24 @@ body {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* We drive Google's translate widget from our own dropdown in TopBar, not its default
+   UI — hide the banner iframe it injects and undo the body offset it adds to make room
+   for that banner. */
+.goog-te-banner-frame,
+.skiptranslate > iframe {
+  display: none !important;
+}
+body {
+  top: 0px !important;
+}
+/* Kept laid-out (not display:none) — the widget builds its <select> lazily and skips
+   that step for elements it considers non-rendered. Clipped to nothing instead, via the
+   inline style set alongside it in googleTranslate.ts. */
+#google_translate_element .goog-te-gadget {
+  height: 0;
+  overflow: hidden;
 }
 
 @media print {

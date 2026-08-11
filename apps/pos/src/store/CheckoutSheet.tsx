@@ -137,10 +137,13 @@ export default function CheckoutSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
+    <div
+      className="fixed inset-x-0 top-0 z-50 flex h-[var(--app-height,100dvh)] items-end justify-center bg-black/30 sm:items-center"
+      onClick={onClose}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full flex-col gap-5 overflow-y-auto rounded-t-2xl bg-white p-6 sm:max-w-[480px] sm:rounded-2xl"
+        className="flex max-h-full w-full flex-col gap-5 overflow-y-auto rounded-t-2xl bg-white p-6 sm:max-h-[85%] sm:max-w-[480px] sm:rounded-2xl"
       >
         {success ? (
           <div className="flex flex-col items-center gap-4 py-6 text-center">

@@ -7,15 +7,17 @@ import CheckoutFlow from './checkout/CheckoutFlow'
 import AcademyPlaceholder from './academy/AcademyPlaceholder'
 import { useAuth } from './auth/AuthProvider'
 import LoginPage from './auth/LoginPage'
+import { useViewportHeight } from './ui/useViewportHeight'
 
 export type View = 'home' | 'booking' | 'store' | 'checkin' | 'academy' | 'checkout'
 
 function App() {
   const { status } = useAuth()
+  useViewportHeight()
 
   if (status === 'checking') {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-page text-sm text-slate">Loading…</div>
+      <div className="flex h-full w-full items-center justify-center bg-page text-sm text-slate">Loading…</div>
     )
   }
   if (status === 'anonymous') return <LoginPage />
@@ -27,7 +29,7 @@ function Shell() {
   const [view, setView] = useState<View>('home')
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-page">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-page">
       {view === 'home' && <Home onNavigate={setView} />}
       {view === 'checkin' && (
         <CheckInFlow onHome={() => setView('home')} onBookNow={() => setView('booking')} onStore={() => setView('store')} />

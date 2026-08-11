@@ -19,8 +19,7 @@ import arrowRight from '../assets/figma/checkin/arrow-right-check.svg'
 const STEP_TITLES = ['Select Sport & Court', 'Date & Time', 'Player Details', 'Add Ons', 'Payment']
 const TOTAL_STEPS = STEP_TITLES.length
 
-function canContinue(step: number, draft: Draft, courtListOpen: boolean) {
-  if (step === 1) return courtListOpen && !!draft.courtId
+function canContinue(step: number, draft: Draft) {
   if (step === 2) return draft.startHour != null
   if (step === 3) return draft.customer.name.trim().length > 1 && /^\d{10}$/.test(draft.customer.phone)
   return true
@@ -66,6 +65,11 @@ export default function BookingFlow({ onDone, initialCourtId }: { onDone: () => 
   }
 
   const goContinue = () => setStep((s) => Math.min(TOTAL_STEPS, s + 1))
+
+  const selectCourt = (courtId: string) => {
+    setDraft({ courtId })
+    setStep(2)
+  }
 
   const jumpToStep = (s: number) => {
     setStep(s)
@@ -128,9 +132,9 @@ export default function BookingFlow({ onDone, initialCourtId }: { onDone: () => 
   if (result) {
     const invoice = buildConfirmedInvoice(result.booking, draft, result.invoice)
     return (
-      <div className="flex h-full w-full flex-col overflow-y-auto">
+      <div className="flex h-full w-full flex-col overflow-hidden">
         <TopBar onLogoClick={reset} />
-        <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-[clamp(1.5rem,4vh,3rem)]">
+        <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-8 overflow-y-auto px-4 py-[clamp(1.5rem,4vh,3rem)]">
           <Confirmation invoice={invoice} onDone={reset} onBookAnother={bookAnother} />
         </main>
         <CheckinFooter onBack={reset} />
@@ -139,14 +143,14 @@ export default function BookingFlow({ onDone, initialCourtId }: { onDone: () => 
   }
 
   const showBack = step > 1 || courtListOpen
-  const continueEnabled = canContinue(step, draft, courtListOpen)
+  const continueEnabled = canContinue(step, draft)
   const trayCount = Object.values(draft.equipment).reduce((a, b) => a + b, 0)
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <TopBar centerTitle={STEP_TITLES[step - 1]} onLogoClick={onDone} />
 
-      <main className="flex flex-1 flex-col gap-5 px-[clamp(1.25rem,3vw,3rem)] py-[clamp(1rem,2vw,1.5rem)]">
+      <main className="flex min-h-0 flex-1 flex-col gap-[clamp(0.5rem,1.5dvh,1.25rem)] overflow-y-auto px-[clamp(1.25rem,3vw,3rem)] py-[clamp(0.5rem,1.6dvh,1.5rem)]">
         {error && (
           <p role="alert" className="w-full rounded-xl bg-negative/10 px-4 py-3 text-sm text-negative">
             {error}
@@ -159,6 +163,7 @@ export default function BookingFlow({ onDone, initialCourtId }: { onDone: () => 
             setDraft={setDraft}
             courtListOpen={courtListOpen}
             setCourtListOpen={setCourtListOpen}
+            onPickCourt={selectCourt}
           />
         )}
         {step === 2 && <DateTime draft={draft} setDraft={setDraft} />}
@@ -173,7 +178,7 @@ export default function BookingFlow({ onDone, initialCourtId }: { onDone: () => 
         onBack={showBack ? goBack : onDone}
         onHome={onDone}
         rightExtra={
-          step < TOTAL_STEPS ? (
+          step > 1 && step < TOTAL_STEPS ? (
             <div className="flex items-center gap-[clamp(1rem,2vw,1.5rem)]">
               <ProgressDots step={step} />
               <button

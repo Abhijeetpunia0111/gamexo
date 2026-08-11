@@ -6,10 +6,10 @@ import { CheckinFooter } from '../checkin/Chrome'
  *  on Home from dead-ending while that flow gets designed next. */
 export default function AcademyPlaceholder({ onHome }: { onHome: () => void }) {
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <TopBar centerTitle="Academy" onLogoClick={onHome} />
 
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-4 overflow-y-auto px-4 py-10 text-center">
         <span className="flex size-16 items-center justify-center rounded-full bg-surface-muted text-muted">
           <GraduationCap size={30} strokeWidth={1.75} />
         </span>

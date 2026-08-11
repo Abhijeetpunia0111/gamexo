@@ -4,6 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthProvider.tsx'
+import { patchDomForTranslateWidget } from './lib/googleTranslate.ts'
+
+// Must run before Google's translate widget ever touches the DOM.
+patchDomForTranslateWidget()
 
 const queryClient = new QueryClient({
   defaultOptions: {

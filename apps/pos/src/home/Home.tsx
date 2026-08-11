@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { LogOut } from 'lucide-react'
 import type { View } from '../App'
 import { TopBar } from '../ui/TopBar'
@@ -37,35 +38,41 @@ function Tile({
 
 export default function Home({ onNavigate }: { onNavigate: (view: View) => void }) {
   const { logout } = useAuth()
+  const [showSignOut, setShowSignOut] = useState(false)
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <TopBar
         onLogoClick={() => onNavigate('home')}
+        onLogoDoubleClick={() => setShowSignOut((v) => !v)}
+        logoMenu={
+          showSignOut && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowSignOut(false)
+                logout()
+              }}
+              className="absolute left-0 top-full z-10 mt-2 flex items-center gap-2 whitespace-nowrap rounded-xl bg-surface px-4 py-3 text-sm font-medium text-muted shadow-[0px_12px_17px_-9px_rgba(0,0,0,0.12)] hover:text-ink"
+            >
+              <LogOut size={16} strokeWidth={1.75} />
+              Sign out
+            </button>
+          )
+        }
         rightExtra={
-          <>
-            <button
-              type="button"
-              onClick={() => onNavigate('checkout')}
-              className="flex h-full items-center gap-2 rounded-xl bg-ink px-[clamp(1rem,1.8vw,1.375rem)] py-3 text-[clamp(0.9375rem,1vw,0.9375rem)] font-bold text-white"
-            >
-              <img src={checkoutIcon} alt="" className="size-[clamp(1.1rem,1.4vw,1.5rem)]" />
-              Checkout
-            </button>
-            <button
-              type="button"
-              onClick={logout}
-              aria-label="Sign out"
-              title="Sign out"
-              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-surface text-muted shadow-[0px_12px_17px_-9px_rgba(0,0,0,0.12)] hover:text-ink"
-            >
-              <LogOut size={17} strokeWidth={1.75} />
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => onNavigate('checkout')}
+            className="flex h-full items-center gap-2 rounded-xl bg-ink px-[clamp(1rem,1.8vw,1.375rem)] py-3 text-[clamp(0.9375rem,1vw,0.9375rem)] font-bold text-white"
+          >
+            <img src={checkoutIcon} alt="" className="size-[clamp(1.1rem,1.4vw,1.5rem)]" />
+            Checkout
+          </button>
         }
       />
 
-      <main className="flex flex-1 flex-col items-center justify-center gap-[clamp(1.75rem,4vh,3.125rem)] px-10 py-10">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-[clamp(1.75rem,4vh,3.125rem)] overflow-y-auto px-10 py-10">
         <div className="flex flex-col items-center gap-1 text-center">
           <p className="font-display text-[clamp(1.5rem,3vw,2.25rem)] font-bold text-ink">Welcome to Xcourt</p>
           <p className="text-[clamp(0.9375rem,1.2vw,1rem)] font-medium text-muted">

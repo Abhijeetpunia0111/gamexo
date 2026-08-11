@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useCourts, useSports } from '../../api/hooks'
 import { money } from '../../lib/format'
 import type { Draft } from '../types'
@@ -21,23 +20,20 @@ export default function SelectSportCourt({
   setDraft,
   courtListOpen,
   setCourtListOpen,
+  onPickCourt,
 }: {
   draft: Draft
   setDraft: (patch: Partial<Draft>) => void
   courtListOpen: boolean
   setCourtListOpen: (open: boolean) => void
+  onPickCourt: (courtId: string) => void
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null)
   const sportsQuery = useSports()
   const courtsQuery = useCourts(draft.sportId || undefined)
 
   const pickSport = (sportId: string) => {
     setDraft({ sportId, courtId: null, date: null, startHour: null })
     setCourtListOpen(true)
-  }
-
-  const pickCourt = (courtId: string) => {
-    setDraft({ courtId })
   }
 
   if (!courtListOpen) {
@@ -90,14 +86,14 @@ export default function SelectSportCourt({
             return (
               <div
                 key={court.id}
-                className={`overflow-hidden rounded-2xl border-[3px] bg-white shadow-[0px_20px_45px_-15px_rgba(0,0,0,0.12)] transition-colors ${
+                className={`flex h-full flex-col overflow-hidden rounded-2xl border-[3px] bg-white shadow-[0px_20px_45px_-15px_rgba(0,0,0,0.12)] transition-colors ${
                   active ? 'border-lime' : 'border-white'
                 }`}
               >
                 <button
                   type="button"
-                  onClick={() => pickCourt(court.id)}
-                  className="flex w-full flex-col items-start gap-3 px-[clamp(1.1rem,1.8vw,1.375rem)] pb-3 pt-[clamp(1.1rem,1.8vw,1.375rem)] text-left"
+                  onClick={() => onPickCourt(court.id)}
+                  className="flex w-full flex-1 flex-col items-start gap-3 px-[clamp(1.1rem,1.8vw,1.375rem)] pb-3 pt-[clamp(1.1rem,1.8vw,1.375rem)] text-left"
                 >
                   <div className="flex w-full items-start justify-between">
                     <p className="text-[clamp(1.15rem,1.8vw,1.375rem)] font-bold text-ink">{court.name}</p>
@@ -112,22 +108,12 @@ export default function SelectSportCourt({
                     </span>
                   )}
                   <p className="text-[clamp(0.8125rem,0.95vw,0.875rem)] text-muted">{court.amenities.join(' · ')}</p>
-                  {expanded === court.id && (
-                    <p className="text-[clamp(0.8125rem,0.95vw,0.875rem)] text-muted">Open {court.hours}</p>
-                  )}
                 </button>
 
-                <div className="flex w-full items-center justify-between bg-surface-muted px-[clamp(1.1rem,1.8vw,1.375rem)] py-3">
+                <div className="flex w-full items-center justify-end bg-surface-muted px-[clamp(1.1rem,1.8vw,1.375rem)] py-3">
                   <button
                     type="button"
-                    onClick={() => setExpanded((id) => (id === court.id ? null : court.id))}
-                    className="text-[clamp(0.8125rem,0.95vw,0.875rem)] font-medium text-ink underline underline-offset-2"
-                  >
-                    Hours &amp; details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => pickCourt(court.id)}
+                    onClick={() => onPickCourt(court.id)}
                     className="flex shrink-0 items-center gap-1.5 rounded-xl bg-ink py-2 pl-3.5 pr-2.5 text-[clamp(0.8125rem,0.95vw,0.875rem)] font-bold text-white"
                   >
                     Pick Slot

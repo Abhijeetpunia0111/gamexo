@@ -7,7 +7,7 @@ function NavPill({ icon, label, onClick }: { icon: string; label: string; onClic
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2.5 rounded-xl bg-surface px-[clamp(1rem,1.6vw,1.375rem)] py-[clamp(0.75rem,1.4vw,0.875rem)] text-[clamp(0.875rem,1vw,1rem)] font-semibold text-ink"
+      className="flex items-center gap-2.5 rounded-xl bg-surface px-[clamp(1rem,1.6vw,1.375rem)] py-[clamp(0.5rem,1.3dvh,0.875rem)] text-[clamp(0.875rem,1vw,1rem)] font-semibold text-ink"
     >
       <img src={icon} alt="" className="size-[clamp(1.1rem,1.4vw,1.5rem)]" />
       {label}
@@ -31,7 +31,7 @@ export function CheckinFooter({
   const showProgress = !!step && !!totalSteps
 
   return (
-    <footer className="flex w-full shrink-0 items-center justify-between gap-4 px-[clamp(1.25rem,3vw,3.25rem)] py-[clamp(1.1rem,2.4vw,1.75rem)]">
+    <footer className="flex w-full shrink-0 items-center justify-between gap-4 px-[clamp(1.25rem,3vw,3.25rem)] py-[clamp(0.625rem,1.8dvh,1.75rem)]">
       <div className="flex items-center gap-[clamp(0.75rem,1.4vw,1.25rem)]">
         {onBack && <NavPill icon={arrowLeft} label="Back" onClick={onBack} />}
         {onHome && <NavPill icon={homeNav} label="Home" onClick={onHome} />}

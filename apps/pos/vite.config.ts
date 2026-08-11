@@ -12,6 +12,9 @@ export default defineConfig({
     // Distinct from the dashboard's 5173 so both frontends can run side by side
     // against the same backend during local dev.
     port: 5174,
+    // Bind every interface, not just loopback, so a phone/tablet on the same
+    // Wi-Fi can reach this for on-device testing.
+    host: true,
   },
   resolve: {
     alias: {
