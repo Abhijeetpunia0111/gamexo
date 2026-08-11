@@ -13,10 +13,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.mail import MailNotConfigured, Message, send_email
+from app.core.mail import MailNotConfigured, MailSendFailed, Message, send_email
 from app.db.session import tenant_session
 from app.jobs import worker
 from app.modules.admin.models import (
@@ -38,19 +39,58 @@ def at(day: int, hour: int) -> str:
 
 @pytest.fixture
 def smtp(monkeypatch):
-    """A configured SMTP server that records instead of sending."""
+    """A configured SMTP server that records instead of sending.
+
+    `resend_api_key` is cleared explicitly: the provider is chosen by which
+    credential is present, so a key left in the developer's .env would silently
+    route these tests down the other transport.
+    """
     sent: list = []
 
     async def fake_send(message, **kwargs):
         sent.append((message, kwargs))
         return {}, "250 2.0.0 OK queued as ABC123"
 
+    monkeypatch.setattr(settings, "resend_api_key", None)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
     monkeypatch.setattr(settings, "smtp_username", "counter@xcourtsports.com")
-    monkeypatch.setattr(settings, "smtp_from_email", "counter@xcourtsports.com")
-    monkeypatch.setattr(settings, "smtp_redirect_all_to", None)
+    monkeypatch.setattr(settings, "mail_from_email", "counter@xcourtsports.com")
+    monkeypatch.setattr(settings, "mail_redirect_all_to", None)
     monkeypatch.setattr("app.core.mail.aiosmtplib.send", fake_send)
     return sent
+
+
+@pytest.fixture
+def resend(monkeypatch):
+    """Resend's HTTP API, captured at the transport boundary."""
+    calls: list = []
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"id": "re_abc123"}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            calls.append({"url": url, "json": json, "headers": headers})
+            return FakeResponse()
+
+    monkeypatch.setattr(settings, "resend_api_key", SecretStr("re_test_key"))
+    monkeypatch.setattr(settings, "mail_from_email", "counter@xcourtsports.com")
+    monkeypatch.setattr(settings, "mail_redirect_all_to", None)
+    monkeypatch.setattr("app.core.mail.httpx.AsyncClient", FakeClient)
+    return calls
 
 
 async def _setup(client: AsyncClient, tenant: TenantFixture) -> dict:
@@ -300,7 +340,7 @@ async def test_redirect_diverts_every_message(
     client: AsyncClient, tenant_a: TenantFixture, smtp, monkeypatch
 ) -> None:
     """The staging guard: real data, one inbox, and the delivery row says so."""
-    monkeypatch.setattr(settings, "smtp_redirect_all_to", "staging@xcourtsports.com")
+    monkeypatch.setattr(settings, "mail_redirect_all_to", "staging@xcourtsports.com")
     ctx = await _setup(client, tenant_a)
     await client.post(
         "/api/v1/bookings",
@@ -339,6 +379,164 @@ async def test_unconfigured_smtp_raises_rather_than_pretending(
             )
         delivery = (await session.execute(select(NotificationDelivery))).scalars().one()
         assert delivery.state is DeliveryState.FAILED
+
+
+# ── Resend transport ────────────────────────────────────────────────────────
+
+
+async def test_resend_is_used_when_an_api_key_is_present(
+    client: AsyncClient, tenant_a: TenantFixture, resend
+) -> None:
+    """The provider is chosen by which credential exists, not by a mode flag."""
+    assert settings.mail_provider == "resend"
+    ctx = await _setup(client, tenant_a)
+    await client.post(
+        "/api/v1/bookings",
+        json={
+            "court_id": ctx["court"],
+            "starts_at": at(20, 10),
+            "duration_min": 60,
+            "customer_id": ctx["customer"],
+        },
+        headers=ctx["headers"],
+    )
+
+    async with tenant_session(tenant_a.id) as session:
+        for job in await worker.claim_batch(session):
+            await worker.run_job(session, job)
+
+        call = resend[0]
+        assert call["headers"]["Authorization"] == "Bearer re_test_key"
+        assert call["json"]["to"] == ["arjun@xcourtsports.com"]
+        # Both parts, so a client that cannot render HTML still shows something.
+        assert call["json"]["text"]
+        assert call["json"]["html"]
+
+        # Resend's own id, not an SMTP response — this is the point of using it.
+        delivery = (await session.execute(select(NotificationDelivery))).scalars().one()
+        assert delivery.state is DeliveryState.SENT
+        assert delivery.provider_message_id == "re_abc123"
+
+
+async def test_resend_sends_from_the_tenants_own_identity(
+    client: AsyncClient, tenant_a: TenantFixture, resend
+) -> None:
+    ctx = await _setup(client, tenant_a)
+    await client.post(
+        "/api/v1/bookings",
+        json={
+            "court_id": ctx["court"],
+            "starts_at": at(21, 10),
+            "duration_min": 60,
+            "customer_id": ctx["customer"],
+        },
+        headers=ctx["headers"],
+    )
+
+    async with tenant_session(tenant_a.id) as session:
+        for job in await worker.claim_batch(session):
+            await worker.run_job(session, job)
+
+    # "Business Name <address>", so the recipient sees the academy, not "gamexo".
+    assert "<" in resend[0]["json"]["from"]
+
+
+async def test_forcing_the_sender_keeps_the_academy_reachable(
+    client: AsyncClient, tenant_a: TenantFixture, resend, monkeypatch
+) -> None:
+    """Providers reject unverified sender domains, so the deployment's verified
+    address sends and the academy's own moves to Reply-To. The recipient still sees
+    the academy, and replying still reaches it."""
+    monkeypatch.setattr(settings, "mail_force_from", True)
+
+    async with tenant_session(tenant_a.id) as session:
+        await send_email(
+            session,
+            Message(to="player@xcourtsports.com", subject="hi", text="hi"),
+            event_key="mail_test",
+            from_email="info@some-unverified-academy.com",
+            from_name="Some Academy",
+        )
+
+    body = resend[0]["json"]
+    assert body["from"] == "Some Academy <counter@xcourtsports.com>"
+    assert body["reply_to"] == "info@some-unverified-academy.com"
+
+
+async def test_without_forcing_the_academys_own_address_sends(
+    client: AsyncClient, tenant_a: TenantFixture, resend, monkeypatch
+) -> None:
+    """Once a domain is verified, the academy sends as itself and needs no Reply-To."""
+    monkeypatch.setattr(settings, "mail_force_from", False)
+
+    async with tenant_session(tenant_a.id) as session:
+        await send_email(
+            session,
+            Message(to="player@xcourtsports.com", subject="hi", text="hi"),
+            event_key="mail_test",
+            from_email="info@verified-academy.com",
+            from_name="Verified Academy",
+        )
+
+    body = resend[0]["json"]
+    assert body["from"] == "Verified Academy <info@verified-academy.com>"
+    assert "reply_to" not in body
+
+
+async def test_a_resend_rejection_surfaces_its_reason(
+    client: AsyncClient, tenant_a: TenantFixture, resend, monkeypatch
+) -> None:
+    """Resend answers 4xx with JSON naming the real problem. Losing that behind a
+    status code is how "emails stopped working" becomes an afternoon."""
+
+    class Refused:
+        status_code = 403
+
+        @staticmethod
+        def json():
+            return {"message": "The gamexo.app domain is not verified."}
+
+    class RefusingClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            return Refused()
+
+    monkeypatch.setattr("app.core.mail.httpx.AsyncClient", RefusingClient)
+
+    async with tenant_session(tenant_a.id) as session:
+        with pytest.raises(MailSendFailed, match="not verified"):
+            await send_email(
+                session,
+                Message(to="someone@xcourtsports.com", subject="hi", text="hi"),
+                event_key="mail_test",
+            )
+        delivery = (await session.execute(select(NotificationDelivery))).scalars().one()
+        assert delivery.state is DeliveryState.FAILED
+        assert "not verified" in delivery.error
+
+
+async def test_redirect_applies_to_resend_too(
+    client: AsyncClient, tenant_a: TenantFixture, resend, monkeypatch
+) -> None:
+    """The staging guard must not be an SMTP-only feature."""
+    monkeypatch.setattr(settings, "mail_redirect_all_to", "staging@xcourtsports.com")
+
+    async with tenant_session(tenant_a.id) as session:
+        await send_email(
+            session,
+            Message(to="real.customer@xcourtsports.com", subject="hi", text="hi"),
+            event_key="mail_test",
+        )
+
+    assert resend[0]["json"]["to"] == ["staging@xcourtsports.com"]
 
 
 # ── "Email invoice" button ──────────────────────────────────────────────────

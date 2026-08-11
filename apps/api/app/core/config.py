@@ -47,19 +47,28 @@ class Settings(BaseSettings):
     # ── HTTP ────────────────────────────────────────────────────────────────
     cors_origins: list[str] = Field(default_factory=list)
 
-    # ── Email (SMTP) ────────────────────────────────────────────────────────
+    # ── Email ───────────────────────────────────────────────────────────────
     #
-    # Defaults target Gmail / Google Workspace. Two things about Gmail that are
-    # not obvious and cost an afternoon each:
+    # Two transports, picked automatically: Resend's HTTP API when RESEND_API_KEY is
+    # set, otherwise SMTP. Nothing sends at all until one of them is configured, so
+    # a deployment without mail queues and skips rather than failing bookings.
     #
-    #   * SMTP_PASSWORD must be a 16-character **app password**, not the account
-    #     password, and app passwords only exist once 2-Step Verification is on.
-    #   * Gmail rewrites the From address to the authenticated mailbox unless that
-    #     address is a verified alias. Setting a sender it does not own does not
-    #     error — the mail just arrives from somewhere else.
+    # Resend is preferred because it returns a real message id (which lands in
+    # notification_delivery.provider_message_id and is searchable in their
+    # dashboard), reports failures as structured JSON rather than an SMTP code, and
+    # needs no outbound port 587 — which some serverless hosts block.
     #
-    # Sending is off until a host is configured, so a deployment with no mail set
-    # up queues and skips rather than failing bookings.
+    # The catch worth knowing before the first send: Resend will only accept a
+    # `from` address on a **domain you have verified** with them. Until a domain is
+    # verified the only usable sender is `onboarding@resend.dev`, and it will only
+    # deliver to the email address that owns the Resend account.
+    resend_api_key: SecretStr | None = None
+    resend_api_url: str = "https://api.resend.com/emails"
+
+    #: SMTP fallback. For Gmail/Workspace, SMTP_PASSWORD is a 16-character app
+    #: password (which only exists once 2-Step Verification is on), not the account
+    #: password — and Gmail silently rewrites From to the authenticated mailbox
+    #: unless the address is a verified alias.
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -67,14 +76,32 @@ class Settings(BaseSettings):
     #: 587 uses STARTTLS (upgrade after connecting); 465 is TLS from the first byte.
     smtp_use_tls: bool = False
     smtp_starttls: bool = True
-    #: Fallback when a tenant has not set its own sender in TenantSettings.
-    smtp_from_email: str | None = None
-    smtp_from_name: str = "gamexo"
-    smtp_timeout_seconds: int = 20
+
+    #: Sender identity, used by whichever transport is active. A tenant's own
+    #: `notification_sender_email` overrides this per academy — unless forced below.
+    mail_from_email: str | None = None
+    mail_from_name: str = "gamexo"
+    #: Always send from MAIL_FROM_EMAIL, keeping the academy's name as the display
+    #: name and putting its own address in Reply-To.
+    #:
+    #: Needed with Resend (and SES, and most providers): they refuse any sender on a
+    #: domain you have not verified with them, so a per-academy address only works
+    #: once that academy's domain is verified too. Forcing the deployment's verified
+    #: sender means every academy can send today, the recipient still sees the
+    #: academy's name, and replies still reach the academy.
+    mail_force_from: bool = False
+    mail_timeout_seconds: int = 20
     #: Every outbound message goes here instead of the real recipient. For staging,
-    #: and for the first run against a live mailbox when you would rather not post
-    #: real bookings to real customers.
-    smtp_redirect_all_to: str | None = None
+    #: and for the first run against live data when you would rather not post real
+    #: bookings to real customers.
+    mail_redirect_all_to: str | None = None
+
+    @property
+    def mail_provider(self) -> str:
+        """Which transport will actually be used. `none` means sending is off."""
+        if self.resend_api_key:
+            return "resend"
+        return "smtp" if self.smtp_host else "none"
 
     # ── Seed ────────────────────────────────────────────────────────────────
     seed_tenant_slug: str = "xcourt"

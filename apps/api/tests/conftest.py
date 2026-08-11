@@ -48,6 +48,7 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.auth.deps import clear_identity_cache  # noqa: E402
 from app.auth.service import provision_tenant  # noqa: E402
+from app.core.config import settings  # noqa: E402
 from app.core.security import Role, hash_password  # noqa: E402
 from app.tenancy.resolver import invalidate_tenant_cache  # noqa: E402
 from app.db.session import dispose_engine, tenant_session, untenanted_session  # noqa: E402
@@ -74,6 +75,20 @@ def _migrate() -> None:
         check=True,
         capture_output=True,
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_email(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing in the suite may send a real email.
+
+    The mail transport is chosen by whichever credential is present, and the
+    developer's own .env has a live Resend key — so without this a test that merely
+    unsets SMTP_HOST reaches the real API and posts real mail. Both credentials are
+    cleared by default; the tests that exercise a transport opt back in with their
+    own fixture.
+    """
+    monkeypatch.setattr(settings, "resend_api_key", None)
+    monkeypatch.setattr(settings, "smtp_host", None)
 
 
 @pytest.fixture(autouse=True)

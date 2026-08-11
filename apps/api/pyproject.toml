@@ -17,9 +17,14 @@ dependencies = [
     # Same algorithm, same $2b$ hash format.
     "bcrypt>=5.0.0",
     "email-validator>=2.2.0",
-    # Async SMTP. smtplib is stdlib but blocking, and one slow handshake to Gmail
-    # would stall the event loop for every other request the worker is serving.
+    # Async SMTP. smtplib is stdlib but blocking, and one slow handshake to the mail
+    # server would stall the event loop for every other request being served. Still
+    # here as the fallback transport when no Resend key is configured.
     "aiosmtplib>=4.0.0",
+    # Resend's HTTP API is the primary mail transport. Runtime, not dev: the image
+    # is built with `uv sync --no-dev`, so a dev-only httpx would be absent exactly
+    # where mail is actually sent.
+    "httpx>=0.28.0",
     # zoneinfo has no bundled tz database on Windows (unlike Linux/macOS, which read
     # the OS's own IANA copy) — without this, ZoneInfo("Asia/Kolkata") raises
     # ZoneInfoNotFoundError the first time anything prices a booking by local time.
