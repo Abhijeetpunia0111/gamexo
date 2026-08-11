@@ -1,0 +1,31 @@
+{
+  // Demo deployment of both frontends as ONE static-asset Worker:
+  //
+  //   /       -> apps/web  (admin dashboard)
+  //   /pos/   -> apps/pos  (walk-in counter)
+  //
+  // One origin, so the API needs exactly one CORS_ORIGINS entry rather than one
+  // per app. apps/pos already builds with base '/pos/', so its bundle references
+  // /pos/assets/... verbatim and drops into the subdirectory with no code change.
+  //
+  // Build the ./dist this points at with `pnpm deploy:build` — it is assembled
+  // from two separate Vite builds and is not any single app's output directory.
+  "name": "gamexo-demo",
+  "compatibility_date": "2026-08-11",
+
+  // No "main". This is an assets-only Worker: there is no script to invoke, so
+  // every request is served straight from the asset store. That is what keeps it
+  // free and unmetered — the 100k requests/day cap on the free plan applies only
+  // to requests that actually run Worker code.
+  "assets": {
+    "directory": "./dist",
+
+    // Neither frontend uses a URL router (both navigate with useState), so this
+    // is a safety net for mistyped paths rather than a routing requirement.
+    // Note it serves the ROOT index.html for anything unmatched, so /pos/typo
+    // renders the dashboard, not the POS shell. Harmless while no app reads the
+    // URL. /pos and /pos/ both resolve correctly via default trailing-slash
+    // handling and never reach this fallback.
+    "not_found_handling": "single-page-application"
+  }
+}

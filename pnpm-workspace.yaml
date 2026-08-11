@@ -2,3 +2,8 @@ packages:
   - "apps/*"
 allowBuilds:
   core-js: true
+  # Both are wrangler's. esbuild bundles Worker scripts; workerd is the local
+  # runtime `wrangler dev` executes against. The demo deploy is assets-only and
+  # needs neither, but leaving them unbuilt makes `wrangler dev` fail confusingly.
+  esbuild: true
+  workerd: true
