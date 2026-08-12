@@ -2175,6 +2175,7 @@
         "description": "Mirrors the timeline types in src/pages/BookingsList.tsx.",
         "enum": [
           "created",
+          "checked_in",
           "extended",
           "equipment",
           "payment",

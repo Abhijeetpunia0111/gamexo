@@ -2172,7 +2172,7 @@ export interface components {
          * @description Mirrors the timeline types in src/pages/BookingsList.tsx.
          * @enum {string}
          */
-        BookingEventKind: "created" | "extended" | "equipment" | "payment" | "invoice" | "edit" | "note" | "cancelled";
+        BookingEventKind: "created" | "checked_in" | "extended" | "equipment" | "payment" | "invoice" | "edit" | "note" | "cancelled";
         /** BookingEventOut */
         BookingEventOut: {
             /** Detail */

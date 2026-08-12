@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
 
+from app.modules.booking import service
+from app.modules.booking.models import BookingType
 from tests.conftest import PASSWORD, TenantFixture, auth_headers, login
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -1113,3 +1115,90 @@ async def test_moving_a_booking_onto_an_occupied_slot_is_refused(
         headers=ctx["headers"],
     )
     assert clash.status_code == 409
+
+
+# ── Auto check-in ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("booking_type", "starts_offset_min", "duration_min", "expected"),
+    [
+        # The player is at the counter: the session is running, or about to be.
+        (BookingType.WALKIN, 0, 60, True),
+        (BookingType.WALKIN, -20, 60, True),
+        (BookingType.WALKIN, 10, 60, True),
+        # Past the lead window this is a reservation, not an arrival. Marking it
+        # checked in would light the court up on the board for hours.
+        (BookingType.WALKIN, 16, 60, False),
+        (BookingType.WALKIN, 360, 60, False),
+        # Entered after the fact — a record of a session that already finished.
+        (BookingType.WALKIN, -120, 60, False),
+        # Booked from elsewhere. Turning up is a separate event the desk confirms.
+        (BookingType.ONLINE, 0, 60, False),
+    ],
+)
+def test_auto_check_in_rule(
+    booking_type: BookingType, starts_offset_min: int, duration_min: int, expected: bool
+) -> None:
+    """`now` is an argument precisely so these cases are expressible at all."""
+    now = datetime(2026, 9, 1, 18, 0, tzinfo=UTC)
+    starts_at = now + timedelta(minutes=starts_offset_min)
+    assert (
+        service.should_auto_check_in(
+            booking_type=booking_type,
+            starts_at=starts_at,
+            ends_at=starts_at + timedelta(minutes=duration_min),
+            now=now,
+        )
+        is expected
+    )
+
+
+async def test_a_walk_in_starting_now_is_checked_in_on_creation(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """The counter takes the booking and the player is on court — one action, not two."""
+    ctx = await setup_academy(client, tenant_a)
+    starts = datetime.now(UTC).replace(microsecond=0).isoformat()
+
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["status"] == "active"
+    assert body["booking_type"] == "walkin"
+
+    # Its own timeline entry: "who checked this in, and when" must be answerable.
+    timeline = await client.get(f"/api/v1/bookings/{body['id']}/timeline", headers=ctx["headers"])
+    assert timeline.status_code == 200, timeline.text
+    kinds = [event["kind"] for event in timeline.json()]
+    assert "checked_in" in kinds
+
+
+async def test_a_walk_in_booked_for_later_stays_upcoming(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Taken at the counter at noon for an evening slot — nobody has arrived yet."""
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) + timedelta(hours=6)).replace(microsecond=0).isoformat()
+
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "upcoming"
+
+    timeline = await client.get(
+        f"/api/v1/bookings/{created.json()['id']}/timeline", headers=ctx["headers"]
+    )
+    assert "checked_in" not in [event["kind"] for event in timeline.json()]
+
+
+async def test_an_online_booking_is_never_auto_checked_in(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    starts = datetime.now(UTC).replace(microsecond=0).isoformat()
+
+    created = await book(
+        client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60, booking_type="online"
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "upcoming"

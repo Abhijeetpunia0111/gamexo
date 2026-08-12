@@ -17,6 +17,7 @@ from app.modules.booking.models import (
     BookingEvent,
     BookingEventKind,
     BookingStatus,
+    BookingType,
     Court,
     Customer,
     Equipment,
@@ -316,6 +317,41 @@ def _apply_quote(booking: Booking, quote: Quote, lines: Sequence[EquipmentLine])
     booking.taxes = quote.taxes
     booking.total = quote.total
     booking.equipment = [line.as_json() for line in lines]
+
+
+# How far ahead of a slot still counts as "the player is standing here".
+#
+# Not zero: someone at the counter at 5:52 taking the 6:00 court is on the spot, and
+# making them wait eight minutes to be checked in is exactly the friction this
+# removes. Not an hour either — a walk-in booked at noon for an evening slot is a
+# reservation, and marking that court in-play for six hours would be a lie the whole
+# board is reading.
+AUTO_CHECKIN_LEAD = timedelta(minutes=15)
+
+
+def should_auto_check_in(
+    *,
+    booking_type: BookingType,
+    starts_at: datetime,
+    ends_at: datetime,
+    now: datetime,
+) -> bool:
+    """Is this booking being taken for a player who is already here?
+
+    Walk-ins only. An `online` booking is made from somewhere else, possibly days
+    ahead, and arriving is a separate event the desk still has to confirm.
+
+    Pure and fully parameterised — `now` is passed rather than read — because the
+    interesting cases are all about time, and they are only testable if the clock
+    is an argument.
+    """
+    if booking_type is not BookingType.WALKIN:
+        return False
+    # Already finished: a session entered after the fact is a record, not an arrival.
+    # Without this, back-filling yesterday's cash booking would light up the court.
+    if ends_at <= now:
+        return False
+    return starts_at <= now + AUTO_CHECKIN_LEAD
 
 
 async def ensure_slot_free(

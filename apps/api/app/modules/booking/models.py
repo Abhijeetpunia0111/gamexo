@@ -104,6 +104,7 @@ class BookingEventKind(StrEnum):
     """Mirrors the timeline types in src/pages/BookingsList.tsx."""
 
     CREATED = "created"
+    CHECKED_IN = "checked_in"
     EXTENDED = "extended"
     EQUIPMENT = "equipment"
     PAYMENT = "payment"

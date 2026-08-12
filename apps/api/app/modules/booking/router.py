@@ -600,6 +600,18 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
     )
 
     ends_at = payload.starts_at + timedelta(minutes=payload.duration_min)
+
+    # A walk-in taken for a slot that is already running is someone standing at the
+    # counter. Leaving it UPCOMING means the desk creates the booking and then
+    # immediately presses Check In on the same screen — two actions recording one
+    # arrival. The player is demonstrably here; that is what a walk-in means.
+    auto_checked_in = service.should_auto_check_in(
+        booking_type=payload.booking_type,
+        starts_at=payload.starts_at,
+        ends_at=ends_at,
+        now=datetime.now(UTC),
+    )
+
     booking = Booking(
         customer_id=customer_id,
         customer_name=name,
@@ -610,6 +622,7 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
         ends_at=ends_at,
         duration_min=payload.duration_min,
         booking_type=payload.booking_type,
+        status=BookingStatus.ACTIVE if auto_checked_in else BookingStatus.UPCOMING,
         notes=payload.notes,
         created_by_user_id=principal.id,
     )
@@ -629,6 +642,20 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
         detail=f"{payload.booking_type.value.title()} booking by {principal.email}",
         actor_user_id=principal.id,
     )
+
+    # Its own timeline entry rather than a note folded into "Booking Created": when
+    # a dispute is about whether someone actually turned up, "who checked this in,
+    # and when" is the question being asked, and an automatic check-in should answer
+    # it as plainly as a manual one would.
+    if auto_checked_in:
+        await service.record_event(
+            db,
+            booking,
+            kind=BookingEventKind.CHECKED_IN,
+            label="Checked In",
+            detail=f"Automatic — walk-in taken at the counter by {principal.email}",
+            actor_user_id=principal.id,
+        )
 
     # Issuing equipment moves real stock, so it goes through the ledger.
     for selection in payload.equipment:
