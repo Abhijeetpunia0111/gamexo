@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BadgeCheck, CalendarDays, CircleDollarSign, UserRound } from 'lucide-react'
+import { BadgeCheck, CalendarDays, CircleDollarSign, Pencil, UserRound } from 'lucide-react'
 import { balanceOf, courtById, money, sportById, toISO, type Booking } from '../data/booking'
 import { useBookings, useRecordPayment } from '../api/hooks'
 import * as db from '../lib/db'
+import EditBookingDrawer from '../booking/EditBookingDrawer'
 
 const statusTone = (payment: Booking['payment']) => {
   const status = payment?.status || 'due'
@@ -35,6 +36,7 @@ export default function BookingsPage() {
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(today)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
 
   const bookings = useMemo(() => {
     const items = bookingsQuery.data?.items ?? []
@@ -197,9 +199,19 @@ export default function BookingsPage() {
                   <p className="text-lg font-semibold text-ink">{selectedBooking.customer.name}</p>
                   <p className="text-sm text-slate">{selectedBooking.customer.phone} · {selectedBooking.customer.email || 'No email on file'}</p>
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusTone(selectedBooking.payment)}`}>
-                  {paymentLabel(selectedBooking)}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusTone(selectedBooking.payment)}`}>
+                    {paymentLabel(selectedBooking)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    title="Edit booking"
+                    className="flex size-8 items-center justify-center rounded-lg border border-border-input bg-white text-ink"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
               </div>
 
               <div className="grid gap-3 rounded-xl bg-surface-muted p-4 sm:grid-cols-2">
@@ -277,6 +289,10 @@ export default function BookingsPage() {
           )}
         </div>
       </div>
+
+      {editing && selectedBooking && (
+        <EditBookingDrawer booking={selectedBooking} onClose={() => setEditing(false)} />
+      )}
     </div>
   )
 }

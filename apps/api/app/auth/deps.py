@@ -254,6 +254,15 @@ RequireAdmin = Annotated[Principal, Depends(require_roles(Role.ADMIN))]
 RequireManager = Annotated[Principal, Depends(require_roles(Role.MANAGER))]
 RequireStaff = Annotated[Principal, Depends(require_roles(Role.RECEPTION))]
 
+#: The counter tablet, and everyone above it. Use this ONLY on endpoints the POS
+#: genuinely needs — it is the weakest guard in the system, and the shared kiosk
+#: login is the most exposed credential in the academy.
+#:
+#: The decision of which endpoints carry this is the whole of the kiosk's blast
+#: radius: anything left at RequireStaff is invisible to the tablet. When adding an
+#: endpoint, default to RequireStaff and move it down only if the POS breaks.
+RequireKiosk = Annotated[Principal, Depends(require_roles(Role.KIOSK))]
+
 
 async def get_current_platform_admin(
     db: UntenantedDb, credentials: BearerToken = None

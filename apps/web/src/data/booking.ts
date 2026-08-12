@@ -293,8 +293,30 @@ export function rangeLabel(startHour: number, hours: number) {
   return `${hour12(startHour)} – ${hour12(startHour + hours)}`
 }
 
-const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
-export const money = (n: number) => `₹${inr.format(Math.round(n || 0))}`
+// Two decimals, always, in both directions. The API stores and returns every
+// amount as NUMERIC(12,2) — ₹334.80 of GST is exactly ₹334.80 — and rounding it to
+// ₹335 for display meant the screen and the invoice disagreed with the ledger by up
+// to 50 paise per line. On a bill someone is paying at a counter, that is the
+// number they hand over cash for.
+//
+// `minimumFractionDigits` matters as much as the maximum: without it, ₹1,600.00
+// renders as "₹1,600" and a column of amounts stops aligning on the decimal point.
+const inr = new Intl.NumberFormat('en-IN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+/** Format an amount for display. Accepts the API's decimal strings as well as numbers. */
+export const money = (n: number | string | null | undefined) => `₹${inr.format(Number(n) || 0)}`
+
+/**
+ * Round to paise — NOT to rupees.
+ *
+ * Only for killing IEEE-754 residue after arithmetic on money (0.1 + 0.2 style), so
+ * a zero balance reads as exactly 0 rather than 7.1e-15. Never use this to drop the
+ * paise off a real amount.
+ */
+export const toPaise = (n: number) => Math.round(n * 100) / 100
 
 /* ---------- pricing ---------- */
 
@@ -364,7 +386,7 @@ export function equipmentLines(equipment: Record<string, number>, hours = 1) {
         id: key,
         name: `${item?.name ?? 'Removed item'}${suffix}`,
         qty,
-        amount: Math.round((item ? addOnRate(item, mode, unit) : 0) * billedUnits),
+        amount: toPaise((item ? addOnRate(item, mode, unit) : 0) * billedUnits),
       }
     })
 }
@@ -373,7 +395,7 @@ export function equipmentLines(equipment: Record<string, number>, hours = 1) {
 export function priceEquipment(equipment: Record<string, number>, hours = 1) {
   const lines = equipmentLines(equipment, hours)
   const equipmentTotal = lines.reduce((sum, l) => sum + l.amount, 0)
-  const gst = Math.round(equipmentTotal * GST_RATE)
+  const gst = toPaise(equipmentTotal * GST_RATE)
   return { lines, equipmentTotal, gst, total: equipmentTotal + gst }
 }
 
@@ -382,7 +404,7 @@ export function priceDraft(draft: Draft) {
   const slotTotal = (court?.price || 0) * draft.hours
   const { lines, equipmentTotal } = priceEquipment(draft.equipment, draft.hours)
   const subtotal = slotTotal + equipmentTotal
-  const gst = Math.round(subtotal * GST_RATE)
+  const gst = toPaise(subtotal * GST_RATE)
   return { slotTotal, lines, equipmentTotal, subtotal, gst, total: subtotal + gst }
 }
 
@@ -423,7 +445,10 @@ export type Sale = {
   createdAt: string
 }
 
-export const balanceOf = (row: { total: number; paidTotal: number }) => Math.max(0, Math.round(row.total - row.paidTotal))
+// toPaise, not Math.round: a ₹2,194.80 booking with nothing paid owes ₹2,194.80,
+// not ₹2,195. The rounding here was silently altering what the counter collects.
+export const balanceOf = (row: { total: number; paidTotal: number }) =>
+  Math.max(0, toPaise(row.total - row.paidTotal))
 
 /** One returnable item, out with one customer. The source of truth for "issued" —
  *  nothing else tracks that count separately, it's always summed from open rentals. */
@@ -449,7 +474,7 @@ export function withExtras(booking: Booking, add: Record<string, number>): Booki
   }
   const { equipmentTotal } = priceEquipment(equipment, booking.hours)
   const subtotal = booking.slotTotal + equipmentTotal
-  const gst = Math.round(subtotal * GST_RATE)
+  const gst = toPaise(subtotal * GST_RATE)
   return { ...booking, equipment, equipmentTotal, subtotal, gst, total: subtotal + gst }
 }
 
@@ -459,7 +484,7 @@ export function extendByHour(booking: Booking): Booking {
   const hours = booking.hours + 1
   const slotTotal = court.price * hours
   const subtotal = slotTotal + booking.equipmentTotal
-  const gst = Math.round(subtotal * GST_RATE)
+  const gst = toPaise(subtotal * GST_RATE)
   return { ...booking, hours, slotTotal, subtotal, gst, total: subtotal + gst }
 }
 
@@ -485,7 +510,7 @@ export function demoBookings(): Booking[] {
   return picks.map((p, i) => {
     const court = courtById(p.courtId)!
     const slotTotal = court.price * p.hours
-    const gst = Math.round(slotTotal * GST_RATE)
+    const gst = toPaise(slotTotal * GST_RATE)
     return {
       id: `NV${70000 + i * 137}`,
       sportId: court.sportId,

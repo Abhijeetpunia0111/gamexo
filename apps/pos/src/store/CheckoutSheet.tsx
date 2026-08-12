@@ -8,7 +8,7 @@ import {
   type BookingOut,
   type EquipmentItem,
 } from '../api/hooks'
-import { money } from '../lib/format'
+import { money, toPaise } from '../lib/format'
 import { PAYMENT_METHODS, type PaymentMethodId } from '../lib/paymentMethods'
 import { downloadInvoicePdf } from '../lib/invoicePdf'
 import { shareOnWhatsApp } from '../lib/share'
@@ -321,7 +321,7 @@ export default function CheckoutSheet({
 
                 <div className="flex items-center justify-between border-t border-border-card pt-3 text-sm">
                   <span className="text-slate">Total (incl. GST)</span>
-                  <span className="font-semibold text-ink">{money(Math.round(trayTotal * 1.18))}</span>
+                  <span className="font-semibold text-ink">{money(toPaise(trayTotal * 1.18))}</span>
                 </div>
 
                 <button
@@ -331,7 +331,7 @@ export default function CheckoutSheet({
                   className="flex h-11 w-full items-center justify-center rounded-full text-sm text-[#fefefe] disabled:opacity-40"
                   style={{ backgroundImage: 'linear-gradient(105deg, rgb(41,41,41) 2%, rgb(26,26,26) 100%)' }}
                 >
-                  {payNow ? `Charge ${money(Math.round(trayTotal * 1.18))}` : 'Print receipt · pay later'}
+                  {payNow ? `Charge ${money(toPaise(trayTotal * 1.18))}` : 'Print receipt · pay later'}
                 </button>
               </div>
             )}

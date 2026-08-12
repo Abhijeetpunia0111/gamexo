@@ -979,3 +979,137 @@ async def test_reception_can_book_but_not_create_courts(
         headers=desk,
     )
     assert refused.status_code == 403
+
+
+# ── Editing a booking ───────────────────────────────────────────────────────
+
+
+async def test_moving_a_booking_keeps_its_equipment(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Rescheduling must not silently strip the kit the customer already has.
+
+    The regression this pins: the handler treated an ABSENT `equipment` field as an
+    empty selection, so a PATCH that only moved the start time re-priced the booking
+    with no add-ons — deleting the rental from the bill and reducing the total. The
+    customer kept the racket; the academy stopped charging for it.
+    """
+    ctx = await setup_academy(client, tenant_a)
+    kit = [{"equipment_id": ctx["equipment_id"], "qty": 1}]
+
+    created = await book(
+        client, ctx, court=ctx["court_1"], starts_at=at(2, 10), minutes=60, equipment=kit
+    )
+    assert created.status_code == 201, created.text
+    before = created.json()
+    assert Decimal(before["equipment_charge"]) > 0
+
+    moved = await client.patch(
+        f"/api/v1/bookings/{before['id']}",
+        json={"starts_at": at(2, 14)},  # time only — equipment deliberately absent
+        headers=ctx["headers"],
+    )
+    assert moved.status_code == 200, moved.text
+    after = moved.json()
+
+    assert len(after["equipment"]) == 1
+    assert after["equipment"][0]["qty"] == 1
+    # Same duration, so the kit costs exactly what it did before the move.
+    assert Decimal(after["equipment_charge"]) == Decimal(before["equipment_charge"])
+
+
+async def test_clearing_equipment_is_distinct_from_omitting_it(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """`equipment: []` means "remove the kit"; omitting it means "leave it alone"."""
+    ctx = await setup_academy(client, tenant_a)
+    kit = [{"equipment_id": ctx["equipment_id"], "qty": 1}]
+
+    created = await book(
+        client, ctx, court=ctx["court_1"], starts_at=at(3, 10), minutes=60, equipment=kit
+    )
+    assert created.status_code == 201, created.text
+
+    cleared = await client.patch(
+        f"/api/v1/bookings/{created.json()['id']}",
+        json={"equipment": []},
+        headers=ctx["headers"],
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["equipment"] == []
+    assert Decimal(cleared.json()["equipment_charge"]) == 0
+
+
+async def test_editing_a_players_details_updates_the_booking_and_the_customer(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=at(4, 10), minutes=60)
+    assert created.status_code == 201, created.text
+    booking = created.json()
+
+    edited = await client.patch(
+        f"/api/v1/bookings/{booking['id']}",
+        json={"customer_name": "Arjun Mehtaa", "customer_phone": "9876500000"},
+        headers=ctx["headers"],
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["customer_name"] == "Arjun Mehtaa"
+    assert edited.json()["customer_phone"] == "9876500000"
+
+    # The correction follows the person to their next visit, not just this booking.
+    if booking.get("customer_id"):
+        customer = await client.get(
+            f"/api/v1/customers/{booking['customer_id']}", headers=ctx["headers"]
+        )
+        assert customer.status_code == 200, customer.text
+        assert customer.json()["name"] == "Arjun Mehtaa"
+
+
+async def test_a_blank_player_name_is_refused(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Whitespace would clear the name off every receipt this booking prints."""
+    ctx = await setup_academy(client, tenant_a)
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=at(5, 10), minutes=60)
+    assert created.status_code == 201, created.text
+
+    blanked = await client.patch(
+        f"/api/v1/bookings/{created.json()['id']}",
+        json={"customer_name": "   "},
+        headers=ctx["headers"],
+    )
+    assert blanked.status_code == 422
+
+
+async def test_cancelling_through_the_edit_endpoint_is_refused(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Cancelling has to release the slot and settle the refund; PATCH does neither."""
+    ctx = await setup_academy(client, tenant_a)
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=at(6, 10), minutes=60)
+    assert created.status_code == 201, created.text
+
+    refused = await client.patch(
+        f"/api/v1/bookings/{created.json()['id']}",
+        json={"status": "cancelled"},
+        headers=ctx["headers"],
+    )
+    assert refused.status_code == 409
+    assert "cancel" in refused.json()["error"]["message"].lower()
+
+
+async def test_moving_a_booking_onto_an_occupied_slot_is_refused(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    first = await book(client, ctx, court=ctx["court_1"], starts_at=at(7, 10), minutes=60)
+    second = await book(client, ctx, court=ctx["court_1"], starts_at=at(7, 12), minutes=60)
+    assert first.status_code == 201 and second.status_code == 201
+
+    clash = await client.patch(
+        f"/api/v1/bookings/{second.json()['id']}",
+        json={"starts_at": at(7, 10, 30)},
+        headers=ctx["headers"],
+    )
+    assert clash.status_code == 409

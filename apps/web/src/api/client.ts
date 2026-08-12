@@ -217,18 +217,32 @@ export const api = {
     notes?: string
   }) => request<Ok<'/api/v1/bookings', 'post', 201>>('/api/v1/bookings', { method: 'POST', body }),
 
-  /** Status transitions from the counter. Re-prices only if the court, time,
-   *  duration, equipment or discount change — a status-only patch does not. */
+  /**
+   * Edit a booking. Desk-admin only — the kiosk login is refused with a 403.
+   *
+   * Re-prices only if the court, time, duration, equipment or discount change; a
+   * status- or notes-only patch does not.
+   *
+   * Two things worth knowing before calling:
+   *
+   * - OMIT `equipment` to keep the booking's existing kit. Sending `[]` clears it.
+   *   The two are different intentions and the server distinguishes them, so never
+   *   send `equipment: []` as a filler value when changing the time.
+   * - `status: 'cancelled'` is rejected with a 409. Cancelling has to release the
+   *   slot and settle the refund, which only `cancelBooking` does.
+   */
   updateBooking: (
     bookingId: string,
     body: Partial<{
-      status: 'upcoming' | 'active' | 'overdue' | 'completed' | 'cancelled'
+      status: 'upcoming' | 'active' | 'overdue' | 'completed'
       court_id: string
       starts_at: string
       duration_min: number
       equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
       discount: number
       notes: string
+      customer_name: string
+      customer_phone: string
     }>,
   ) =>
     request<Ok<'/api/v1/bookings/{booking_id}', 'patch'>>(`/api/v1/bookings/${bookingId}`, {

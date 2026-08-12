@@ -1,5 +1,5 @@
 import { MEMBERSHIP_PLANS, type MembershipPlan } from '../../data/membership'
-import { GST_RATE } from '../../data/booking'
+import { GST_RATE, toPaise } from '../../data/booking'
 import * as db from '../../lib/db'
 import type { CustomPlan, PlanOverride } from '../../lib/db'
 
@@ -19,7 +19,7 @@ export type EffectivePlan = {
 
 function fromGenerated(plan: MembershipPlan, override?: PlanOverride): EffectivePlan {
   const price = override?.price ?? plan.fee
-  const gst = Math.round(price * GST_RATE)
+  const gst = toPaise(price * GST_RATE)
   return {
     id: plan.id,
     name: plan.name,
@@ -36,7 +36,7 @@ function fromGenerated(plan: MembershipPlan, override?: PlanOverride): Effective
 }
 
 function fromCustom(plan: CustomPlan): EffectivePlan {
-  const gst = Math.round(plan.price * GST_RATE)
+  const gst = toPaise(plan.price * GST_RATE)
   return {
     id: plan.id,
     name: plan.name,

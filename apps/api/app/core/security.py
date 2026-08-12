@@ -40,20 +40,34 @@ BCRYPT_ROUNDS = 12
 
 
 class Role(StrEnum):
-    """Tenant-scoped roles. These mirror the frontend's Staff page exactly."""
+    """Tenant-scoped roles. admin/manager/reception mirror the Staff page exactly.
+
+    KIOSK is not a person — it is the shared login on the walk-in counter tablet,
+    which is physically reachable by anyone standing in front of it. It sits BELOW
+    reception on purpose: everything the dashboard exposes (revenue reports, the
+    staff list, settings, membership plans) is guarded at reception and above, so
+    the counter device cannot read the business out of the API even though it holds
+    a valid token for the academy.
+    """
 
     ADMIN = "admin"
     MANAGER = "manager"
     RECEPTION = "reception"
+    KIOSK = "kiosk"
 
 
 # Ordered most- to least-privileged. `require_roles` treats a higher role as
 # satisfying a requirement for a lower one, so an admin never gets 403'd from a
 # reception endpoint.
+#
+# KIOSK is the floor. Guarding an endpoint at KIOSK admits everyone; guarding at
+# RECEPTION is what actually excludes the counter tablet. The gap between 10 and 5
+# is deliberate — a future "read-only display" role slots in at 7 without renumbering.
 ROLE_HIERARCHY: dict[Role, int] = {
     Role.ADMIN: 30,
     Role.MANAGER: 20,
     Role.RECEPTION: 10,
+    Role.KIOSK: 5,
 }
 
 

@@ -193,7 +193,18 @@ def _refresh_invoice_status(invoice: Invoice) -> None:
         invoice.status = InvoiceStatus.PENDING
 
 
-def _refresh_booking_payment_status(booking: Booking) -> None:
+def refresh_booking_payment_status(booking: Booking) -> None:
+    """Derive payment_status from amount_paid vs total.
+
+    Public because editing a booking re-prices it, and a new total with an unchanged
+    amount_paid has to move the status or the booking reads PAID while money is owed.
+    Booking edits call this too — the derivation lives here, once, because two copies
+    of "when is a booking paid" is how they drift.
+
+    Never sets REFUNDED: that is a deliberate act recorded elsewhere, not something
+    a total recalculation can infer. Callers that might touch a refunded booking
+    check for it before calling.
+    """
     if booking.amount_paid <= 0:
         booking.payment_status = BookingPaymentStatus.PENDING
     elif booking.amount_paid < booking.total:
@@ -271,7 +282,7 @@ async def record_payment(
     if booking is not None:
         booking.amount_paid = money(booking.amount_paid + amount)
         booking.payment_method = method
-        _refresh_booking_payment_status(booking)
+        refresh_booking_payment_status(booking)
 
     await session.flush()
     return payment

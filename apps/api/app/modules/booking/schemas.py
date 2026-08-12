@@ -345,7 +345,13 @@ class BookingCreate(BaseModel):
 
 
 class BookingUpdate(BaseModel):
-    """Edits allowed before payment completes — mirrors the Edit Booking drawer."""
+    """Edits allowed on a booking — mirrors the Edit Booking drawer.
+
+    Every field is optional and distinguishable from "not sent" via
+    `exclude_unset`, which the handler relies on: sending `equipment: []` clears the
+    kit, whereas omitting it must leave the existing kit alone. Those are different
+    intentions and a plain `or` cannot tell them apart.
+    """
 
     court_id: uuid.UUID | None = None
     starts_at: datetime | None = None
@@ -354,6 +360,36 @@ class BookingUpdate(BaseModel):
     discount: Decimal | None = Field(default=None, ge=0)
     notes: str | None = None
     status: BookingStatus | None = None
+
+    #: Who actually played. These are the booking's own snapshot columns, not the
+    #: customer record — see the Booking model docstring on why the two are separate.
+    #: The linked customer row is updated alongside, so a corrected spelling follows
+    #: the person to their next visit.
+    customer_name: str | None = Field(default=None, min_length=1, max_length=200)
+    customer_phone: str | None = Field(default=None, max_length=32)
+
+    @field_validator("customer_name")
+    @classmethod
+    def _name_not_blank(cls, v: str | None) -> str | None:
+        """`min_length=1` still admits "   ", which would blank the name on receipts."""
+        if v is None:
+            return None
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("customer_name cannot be blank")
+        return stripped
+
+
+class BookingEquipmentSet(BaseModel):
+    """The complete kit list for a booking — a replacement, not an addition.
+
+    Named `set` rather than `add` because that is what it does: both the POS counter
+    sheet and the dashboard already merge against the booking's existing lines
+    client-side and send the whole list. Making this additive would double every
+    quantity they send.
+    """
+
+    equipment: list[EquipmentSelection]
 
 
 class BookingExtend(BaseModel):

@@ -9,6 +9,7 @@
  * Mirrors `EquipmentSelection` on the API, and `apps/web/src/addons/offers.ts`.
  */
 import type { EquipmentItem } from '../api/hooks'
+import { toPaise } from '../lib/format'
 
 export type { EquipmentItem }
 
@@ -123,7 +124,7 @@ export function trayLines(tray: Record<string, number>, catalog: EquipmentItem[]
         label: `${item?.name ?? 'Removed item'}${suffix}`,
         qty,
         rate,
-        amount: Math.round(rate * billed),
+        amount: toPaise(rate * billed),
       }
     })
 }

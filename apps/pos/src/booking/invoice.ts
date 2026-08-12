@@ -1,5 +1,5 @@
 import { FACILITY_PROFILE } from '../facility/facilityData'
-import { dayLabel, formalDate, hour12, money, toISO } from '../lib/format'
+import { dayLabel, formalDate, hour12, money, toISO, toPaise } from '../lib/format'
 import type { BookingDetail, Court, InvoiceOut, QuoteOut, Sport } from '../api/hooks'
 import type { Draft } from './types'
 
@@ -31,8 +31,12 @@ export type InvoiceData = {
 }
 
 function splitGst(gst: number) {
-  const cgst = Math.round(gst / 2)
-  return { cgst, sgst: gst - cgst }
+  // toPaise, not Math.round. Rounding to whole rupees split ₹334.80 into ₹167 and
+  // ₹167.80 — two halves of one tax that are not equal, on a document a customer
+  // may hand to an accountant. Halving at paise precision keeps them equal, and
+  // deriving sgst by subtraction keeps the pair summing to gst exactly.
+  const cgst = toPaise(gst / 2)
+  return { cgst, sgst: toPaise(gst - cgst) }
 }
 
 /** Provisional invoice for the wizard's Payment step — priced by the server (`/bookings/quote`)

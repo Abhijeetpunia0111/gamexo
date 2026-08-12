@@ -1,5 +1,21 @@
-const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
-export const money = (n: number | string | null | undefined) => `₹${inr.format(Math.round(Number(n) || 0))}`
+// Two decimals, always. The API returns every amount as a NUMERIC(12,2) string, so
+// ₹334.80 of GST is exactly ₹334.80 — rounding it to ₹335 for display put the
+// counter screen out of step with the ledger and with the invoice the customer is
+// handed. `minimumFractionDigits` keeps ₹1,600.00 from collapsing to "₹1,600" and
+// breaking decimal alignment down a column of amounts.
+const inr = new Intl.NumberFormat('en-IN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+export const money = (n: number | string | null | undefined) => `₹${inr.format(Number(n) || 0)}`
+
+/**
+ * Round to paise — NOT to rupees.
+ *
+ * For clearing IEEE-754 residue after arithmetic on money, so a settled bill reads
+ * as 0 rather than 4.5e-14. Never use it to drop paise off a real amount.
+ */
+export const toPaise = (n: number) => Math.round(n * 100) / 100
 
 export const toISO = (d: Date) => {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000)

@@ -542,6 +542,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bookings/{booking_id}/equipment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a booking's equipment
+         * @description Replaces the whole kit list and re-prices. **Reachable by the POS counter**, unlike `PATCH /bookings/{id}` — adding a racket mid-game is counter work, rescheduling is not.
+         *
+         *     A replacement, not an addition: send the complete list. Both frontends already merge against the booking's existing lines before calling.
+         */
+        put: operations["booking_setBookingEquipment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bookings/{booking_id}/extend": {
         parameters: {
             query?: never;
@@ -2133,6 +2155,19 @@ export interface components {
             total: string;
         };
         /**
+         * BookingEquipmentSet
+         * @description The complete kit list for a booking — a replacement, not an addition.
+         *
+         *     Named `set` rather than `add` because that is what it does: both the POS counter
+         *     sheet and the dashboard already merge against the booking's existing lines
+         *     client-side and send the whole list. Making this additive would double every
+         *     quantity they send.
+         */
+        BookingEquipmentSet: {
+            /** Equipment */
+            equipment: components["schemas"]["EquipmentSelection"][];
+        };
+        /**
          * BookingEventKind
          * @description Mirrors the timeline types in src/pages/BookingsList.tsx.
          * @enum {string}
@@ -2240,11 +2275,20 @@ export interface components {
         BookingType: "walkin" | "online";
         /**
          * BookingUpdate
-         * @description Edits allowed before payment completes — mirrors the Edit Booking drawer.
+         * @description Edits allowed on a booking — mirrors the Edit Booking drawer.
+         *
+         *     Every field is optional and distinguishable from "not sent" via
+         *     `exclude_unset`, which the handler relies on: sending `equipment: []` clears the
+         *     kit, whereas omitting it must leave the existing kit alone. Those are different
+         *     intentions and a plain `or` cannot tell them apart.
          */
         BookingUpdate: {
             /** Court Id */
             court_id?: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
+            /** Customer Phone */
+            customer_phone?: string | null;
             /** Discount */
             discount?: number | string | null;
             /** Duration Min */
@@ -4177,10 +4221,17 @@ export interface components {
         };
         /**
          * Role
-         * @description Tenant-scoped roles. These mirror the frontend's Staff page exactly.
+         * @description Tenant-scoped roles. admin/manager/reception mirror the Staff page exactly.
+         *
+         *     KIOSK is not a person — it is the shared login on the walk-in counter tablet,
+         *     which is physically reachable by anyone standing in front of it. It sits BELOW
+         *     reception on purpose: everything the dashboard exposes (revenue reports, the
+         *     staff list, settings, membership plans) is guarded at reception and above, so
+         *     the counter device cannot read the business out of the API even though it holds
+         *     a valid token for the academy.
          * @enum {string}
          */
-        Role: "admin" | "manager" | "reception";
+        Role: "admin" | "manager" | "reception" | "kiosk";
         /** SessionCreate */
         SessionCreate: {
             /**
@@ -6204,6 +6255,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BookingCancel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    booking_setBookingEquipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookingEquipmentSet"];
             };
         };
         responses: {

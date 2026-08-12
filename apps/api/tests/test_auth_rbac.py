@@ -230,6 +230,17 @@ async def test_a_token_signed_with_the_wrong_key_is_rejected(
         (Role.RECEPTION, Role.ADMIN, False),
         (Role.RECEPTION, Role.MANAGER, False),
         (Role.RECEPTION, Role.RECEPTION, True),
+        # The counter tablet. Everything the dashboard exposes is guarded at
+        # RECEPTION or above, so these three False cases ARE the kiosk's blast
+        # radius — reporting, staff, settings and finance all sit behind them.
+        (Role.KIOSK, Role.ADMIN, False),
+        (Role.KIOSK, Role.MANAGER, False),
+        (Role.KIOSK, Role.RECEPTION, False),
+        (Role.KIOSK, Role.KIOSK, True),
+        # ...and every real person can still work the counter.
+        (Role.RECEPTION, Role.KIOSK, True),
+        (Role.MANAGER, Role.KIOSK, True),
+        (Role.ADMIN, Role.KIOSK, True),
     ],
 )
 def test_role_hierarchy(actual: Role, required: Role, allowed: bool) -> None:

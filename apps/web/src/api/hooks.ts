@@ -396,6 +396,48 @@ export function useSetBookingStatus() {
   })
 }
 
+/**
+ * Edit a booking from the dashboard — reschedule it, move it to another court, or
+ * correct who was playing.
+ *
+ * Only the fields actually passed are sent. That is load-bearing rather than tidy:
+ * the server treats an omitted `equipment` as "leave the kit alone" and a sent
+ * `equipment: []` as "clear the kit", so spreading a full booking object in here
+ * would wipe the customer's rackets every time someone nudged a start time.
+ *
+ * Conflicts surface as a 409 from the exclusion constraint — the server decides
+ * whether a slot is free, never this client.
+ */
+export function useUpdateBooking() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: {
+      bookingId: string
+      courtId?: string
+      startsAt?: string
+      durationMin?: number
+      customerName?: string
+      customerPhone?: string
+      notes?: string
+    }) => {
+      const body: Parameters<typeof api.updateBooking>[1] = {}
+      if (vars.courtId !== undefined) body.court_id = vars.courtId
+      if (vars.startsAt !== undefined) body.starts_at = vars.startsAt
+      if (vars.durationMin !== undefined) body.duration_min = vars.durationMin
+      if (vars.customerName !== undefined) body.customer_name = vars.customerName
+      if (vars.customerPhone !== undefined) body.customer_phone = vars.customerPhone
+      if (vars.notes !== undefined) body.notes = vars.notes
+      return api.updateBooking(vars.bookingId, body)
+    },
+    onSuccess: () => {
+      invalidatePos(qc)
+      // The player's name and phone are corrected on the customer record too, so
+      // anything showing the customer list is stale after this.
+      qc.invalidateQueries({ queryKey: ['customers'] })
+    },
+  })
+}
+
 /** 409 when another booking already follows — the server decides, not the client. */
 export function useExtendBooking() {
   const qc = useQueryClient()

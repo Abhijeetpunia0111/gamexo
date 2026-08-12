@@ -224,18 +224,25 @@ export const api = {
   }) =>
     request<Ok<'/api/v1/bookings', 'post', 201>>('/api/v1/bookings', { method: 'POST', body }),
 
-  updateBooking: (
+  /**
+   * Replace a booking's kit and re-price.
+   *
+   * The counter is deliberately NOT allowed to reach `PATCH /bookings/{id}` — that
+   * endpoint also moves bookings between courts and times, which is desk-admin work.
+   * The kiosk login is refused there with a 403, so adding a racket mid-game goes
+   * through this narrower endpoint instead.
+   *
+   * Send the COMPLETE list, not just the new items: this replaces rather than adds,
+   * and callers already merge against the booking's existing lines before calling.
+   */
+  setBookingEquipment: (
     bookingId: string,
-    body: {
-      equipment?: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[]
-      notes?: string | null
-      discount?: number | null
-    },
+    equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[],
   ) =>
-    request<Ok<'/api/v1/bookings/{booking_id}', 'patch'>>(`/api/v1/bookings/${bookingId}`, {
-      method: 'PATCH',
-      body,
-    }),
+    request<Ok<'/api/v1/bookings/{booking_id}/equipment', 'put'>>(
+      `/api/v1/bookings/${bookingId}/equipment`,
+      { method: 'PUT', body: { equipment } },
+    ),
 
   /** Idempotent — a booking that already has one returns the existing invoice. */
   invoiceBooking: (bookingId: string) =>

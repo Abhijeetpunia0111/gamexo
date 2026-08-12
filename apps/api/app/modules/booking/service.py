@@ -128,6 +128,36 @@ def _line_for(item: Equipment, selection: EquipmentSelection) -> EquipmentLine:
     )
 
 
+async def price_with_lines(
+    session: AsyncSession,
+    *,
+    court: Court,
+    starts_at: datetime,
+    duration_min: int,
+    lines: Sequence[EquipmentLine],
+    discount: Decimal,
+) -> Quote:
+    """Price a booking against equipment lines that are already resolved.
+
+    Split out from `price_booking` for edits that must NOT re-resolve kit against
+    the catalogue. Moving a booking to a later slot re-prices the court, but the
+    racket the customer already has in hand was agreed at the rate on their bill —
+    re-resolving would silently restate it at today's price. Passing the stored
+    lines through keeps that half of the total frozen.
+    """
+    settings = await load_settings(session)
+    return quote_booking(
+        court=court,
+        starts_at=starts_at,
+        duration_min=duration_min,
+        equipment_lines=lines,
+        discount=discount,
+        booking_rules=settings.booking_rules,
+        tax_config=settings.tax_config,
+        timezone_name=settings.timezone,
+    )
+
+
 async def price_booking(
     session: AsyncSession,
     *,
@@ -137,17 +167,15 @@ async def price_booking(
     selections: Iterable[EquipmentSelection],
     discount: Decimal,
 ) -> tuple[Quote, list[EquipmentLine]]:
-    settings = await load_settings(session)
+    """Price a booking, resolving kit selections against the catalogue first."""
     lines, _ = await resolve_equipment_lines(session, selections)
-    quote = quote_booking(
+    quote = await price_with_lines(
+        session,
         court=court,
         starts_at=starts_at,
         duration_min=duration_min,
-        equipment_lines=lines,
+        lines=lines,
         discount=discount,
-        booking_rules=settings.booking_rules,
-        tax_config=settings.tax_config,
-        timezone_name=settings.timezone,
     )
     return quote, lines
 

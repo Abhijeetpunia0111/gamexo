@@ -1,5 +1,5 @@
 import { FACILITY_PROFILE } from '../facility/facilityData'
-import { courtById, hour12, money, priceDraft, sportById, toISO, type Draft } from '../data/booking'
+import { courtById, hour12, money, priceDraft, sportById, toISO, toPaise, type Draft } from '../data/booking'
 import type { BookingQuote } from '../api/hooks'
 
 /** Today / Tomorrow / "Wed, 12 Aug" — matches the relative-day chips used elsewhere in booking. */
@@ -44,9 +44,11 @@ export function buildInvoice(
   const gst = quote ? num(quote.taxes) : local.gst
   const total = quote ? num(quote.total) : local.total
 
-  // GST is a flat 18% in the pricing model; split evenly into CGST/SGST for the invoice line items.
-  const cgst = Math.round(gst / 2)
-  const sgst = gst - cgst
+  // GST is a flat 18% in the pricing model; split evenly into CGST/SGST for the
+  // invoice line items. Halved at paise precision — rounding to rupees turned
+  // ₹334.80 into ₹167 + ₹167.80, two unequal halves of one tax.
+  const cgst = toPaise(gst / 2)
+  const sgst = toPaise(gst - cgst)
   const date = draft.date || toISO(new Date())
   const timeRange =
     draft.startHour != null ? `${hour12(draft.startHour)} – ${hour12(draft.startHour + draft.hours)}` : null

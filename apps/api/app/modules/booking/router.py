@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query, status
 from sqlalchemy import select
 
 from app.api_utils import Page, Params, get_or_404, paginate
-from app.auth.deps import RequireManager, RequireStaff
+from app.auth.deps import RequireKiosk, RequireManager, RequireStaff
 from app.core.errors import ConflictError, NotFoundError
 from app.modules.booking import service
 from app.modules.booking.models import (
@@ -23,14 +23,17 @@ from app.modules.booking.models import (
     Equipment,
     EquipmentMovement,
     MovementKind,
+    PaymentStatus,
     Sport,
 )
 from app.modules.admin.notify import EMAIL_BOOKING_CONFIRMATION, enqueue_email
 from app.modules.booking.pricing import money
+from app.modules.finance.service import refresh_booking_payment_status
 from app.modules.booking.schemas import (
     BookingCancel,
     BookingCreate,
     BookingDetail,
+    BookingEquipmentSet,
     BookingEventOut,
     BookingExtend,
     BookingOut,
@@ -64,7 +67,7 @@ router = APIRouter(tags=["booking"])
 
 
 @router.get("/sports", response_model=list[SportOut], summary="List sports")
-async def list_sports(db: Db, _: RequireStaff, include_inactive: bool = False) -> list[SportOut]:
+async def list_sports(db: Db, _: RequireKiosk, include_inactive: bool = False) -> list[SportOut]:
     stmt = select(Sport).order_by(Sport.display_order, Sport.name)
     if not include_inactive:
         stmt = stmt.where(Sport.is_active.is_(True))
@@ -106,7 +109,7 @@ async def update_sport(
 )
 async def list_courts(
     db: Db,
-    _: RequireStaff,
+    _: RequireKiosk,
     sport_id: uuid.UUID | None = None,
     at: datetime | None = Query(default=None, description="Defaults to now"),
 ) -> list[CourtWithStatus]:
@@ -171,7 +174,7 @@ async def update_court(
 )
 async def availability(
     db: Db,
-    _: RequireStaff,
+    _: RequireKiosk,
     date: Annotated[datetime, Query(description="Any instant on the target day")],
     duration_min: Annotated[int, Query(ge=15, le=1440)] = 60,
     sport_id: uuid.UUID | None = None,
@@ -195,7 +198,7 @@ async def availability(
 @router.get("/equipment", response_model=Page[EquipmentOut], summary="List equipment")
 async def list_equipment(
     db: Db,
-    _: RequireStaff,
+    _: RequireKiosk,
     params: Params,
     category: str | None = None,
     low_stock_only: bool = False,
@@ -409,7 +412,7 @@ async def update_customer(
     summary="Price a booking without creating it",
     description="Backs the walk-in wizard's live summary, so the quote and the booking agree.",
 )
-async def quote(payload: QuoteRequest, db: Db, _: RequireStaff) -> QuoteOut:
+async def quote(payload: QuoteRequest, db: Db, _: RequireKiosk) -> QuoteOut:
     court = await get_or_404(db, Court, payload.court_id, label="Court")
     result, lines = await service.price_booking(
         db,
@@ -448,7 +451,7 @@ async def quote(payload: QuoteRequest, db: Db, _: RequireStaff) -> QuoteOut:
 @router.get("/bookings", response_model=Page[BookingOut], summary="List bookings")
 async def list_bookings(
     db: Db,
-    _: RequireStaff,
+    _: RequireKiosk,
     params: Params,
     booking_status: Annotated[BookingStatus | None, Query(alias="status")] = None,
     court_id: uuid.UUID | None = None,
@@ -512,7 +515,7 @@ async def _queue_booking_confirmation(db, booking: Booking) -> None:
         "the response rather than assuming it is new."
     ),
 )
-async def create_booking(payload: BookingCreate, db: Db, principal: RequireStaff) -> BookingDetail:
+async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk) -> BookingDetail:
     court = await get_or_404(db, Court, payload.court_id, label="Court")
     if not court.is_bookable:
         raise ConflictError(
@@ -655,7 +658,7 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireStaff
 
 
 @router.get("/bookings/{booking_id}", response_model=BookingDetail, summary="A single booking")
-async def get_booking(booking_id: uuid.UUID, db: Db, _: RequireStaff) -> BookingDetail:
+async def get_booking(booking_id: uuid.UUID, db: Db, _: RequireKiosk) -> BookingDetail:
     booking = await get_or_404(db, Booking, booking_id, label="Booking")
     return await _detail(db, booking)
 
@@ -675,11 +678,40 @@ async def update_booking(
 
     updates = payload.model_dump(exclude_unset=True)
     reprice = {"court_id", "starts_at", "duration_min", "equipment", "discount"} & set(updates)
+    changed: list[str] = []
 
-    if "status" in updates:
+    # Cancelling has consequences this endpoint does not implement — releasing the
+    # slot, the refund decision, the cancellation event. Routing it here would skip
+    # all three and leave a booking that looks cancelled but never freed its court.
+    if "status" in updates and updates["status"] == BookingStatus.CANCELLED:
+        raise ConflictError(
+            "Use POST /bookings/{id}/cancel to cancel a booking.",
+            details={"booking_id": str(booking.id)},
+        )
+
+    if "status" in updates and booking.status is not updates["status"]:
+        changed.append(f"status → {updates['status'].value}")
         booking.status = updates["status"]
     if "notes" in updates:
+        changed.append("notes")
         booking.notes = updates["notes"]
+
+    # ── Who played ───────────────────────────────────────────────────────────
+    # The booking's snapshot is authoritative for this booking. The linked customer
+    # row is corrected alongside so the fix follows them to their next visit — the
+    # snapshot still protects every OTHER booking they have from being rewritten.
+    if "customer_name" in updates or "customer_phone" in updates:
+        customer = await db.get(Customer, booking.customer_id) if booking.customer_id else None
+        if "customer_name" in updates:
+            changed.append("player name")
+            booking.customer_name = updates["customer_name"]
+            if customer is not None:
+                customer.name = updates["customer_name"]
+        if "customer_phone" in updates:
+            changed.append("player phone")
+            booking.customer_phone = updates["customer_phone"]
+            if customer is not None and updates["customer_phone"]:
+                customer.phone = updates["customer_phone"]
 
     if reprice:
         court = (
@@ -687,19 +719,35 @@ async def update_booking(
             if payload.court_id
             else await db.get(Court, booking.court_id)
         )
-        starts_at = payload.starts_at or booking.starts_at
-        duration = payload.duration_min or booking.duration_min
-        selections = payload.equipment if payload.equipment is not None else []
-        discount = payload.discount if payload.discount is not None else booking.discount
+        starts_at = payload.starts_at if "starts_at" in updates else booking.starts_at
+        duration = payload.duration_min if "duration_min" in updates else booking.duration_min
+        discount = payload.discount if "discount" in updates else booking.discount
 
-        quote_result, lines = await service.price_booking(
-            db,
-            court=court,
-            starts_at=starts_at,
-            duration_min=duration,
-            selections=selections,
-            discount=discount,
-        )
+        if "equipment" in updates:
+            # Explicitly sent — a replacement, including `[]` to clear the kit.
+            quote_result, lines = await service.price_booking(
+                db,
+                court=court,
+                starts_at=starts_at,
+                duration_min=duration,
+                selections=payload.equipment or [],
+                discount=discount,
+            )
+        else:
+            # NOT sent. Carry the stored lines through verbatim. Treating "absent"
+            # as "empty" here silently deleted the customer's kit — and reduced
+            # their bill — every time someone moved a booking by ten minutes.
+            lines = service.equipment_lines_from_json(booking.equipment)
+            quote_result = await service.price_with_lines(
+                db,
+                court=court,
+                starts_at=starts_at,
+                duration_min=duration,
+                lines=lines,
+                discount=discount,
+            )
+
+        changed.extend(sorted(reprice))
         booking.court_id = court.id
         booking.sport_id = court.sport_id
         booking.starts_at = starts_at
@@ -714,16 +762,77 @@ async def update_booking(
             ends_at=booking.ends_at,
             exclude_booking_id=booking.id,
         )
+        _resync_payment(booking)
+
+    if changed:
         await db.flush()
         await service.record_event(
             db,
             booking,
             kind=BookingEventKind.EDIT,
             label="Booking Edited",
-            detail=f"Updated {', '.join(sorted(reprice))}",
+            detail=f"Updated {', '.join(changed)}",
             actor_user_id=principal.id,
         )
 
+    await db.flush()
+    return await _detail(db, booking)
+
+
+def _resync_payment(booking: Booking) -> None:
+    """Re-derive payment_status after a re-price.
+
+    A booking paid in full that is then extended owes money again; one that shrinks
+    is overpaid. Leaving payment_status alone would let a booking read PAID with a
+    balance outstanding, which is the version of this bug that reaches a customer.
+
+    REFUNDED is left alone: it records something that happened, not a comparison of
+    two numbers, and no recalculation should overwrite it.
+    """
+    if booking.payment_status is not PaymentStatus.REFUNDED:
+        refresh_booking_payment_status(booking)
+
+
+@router.put(
+    "/bookings/{booking_id}/equipment",
+    response_model=BookingDetail,
+    summary="Set a booking's equipment",
+    description=(
+        "Replaces the whole kit list and re-prices. **Reachable by the POS counter**, "
+        "unlike `PATCH /bookings/{id}` — adding a racket mid-game is counter work, "
+        "rescheduling is not.\n\n"
+        "A replacement, not an addition: send the complete list. Both frontends "
+        "already merge against the booking's existing lines before calling."
+    ),
+)
+async def set_booking_equipment(
+    booking_id: uuid.UUID, payload: BookingEquipmentSet, db: Db, principal: RequireKiosk
+) -> BookingDetail:
+    booking = await get_or_404(db, Booking, booking_id, label="Booking")
+    if booking.status is BookingStatus.CANCELLED:
+        raise ConflictError("This booking has been cancelled and can no longer be edited.")
+
+    court = await db.get(Court, booking.court_id)
+    quote_result, lines = await service.price_booking(
+        db,
+        court=court,
+        starts_at=booking.starts_at,
+        duration_min=booking.duration_min,
+        selections=payload.equipment,
+        discount=booking.discount,
+    )
+    service._apply_quote(booking, quote_result, lines)
+    _resync_payment(booking)
+
+    await db.flush()
+    await service.record_event(
+        db,
+        booking,
+        kind=BookingEventKind.EDIT,
+        label="Kit Updated",
+        detail=f"{len(lines)} item line(s) on the bill",
+        actor_user_id=principal.id,
+    )
     await db.flush()
     return await _detail(db, booking)
 

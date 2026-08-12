@@ -2154,6 +2154,23 @@
         "title": "BookingDetail",
         "type": "object"
       },
+      "BookingEquipmentSet": {
+        "description": "The complete kit list for a booking \u2014 a replacement, not an addition.\n\nNamed `set` rather than `add` because that is what it does: both the POS counter\nsheet and the dashboard already merge against the booking's existing lines\nclient-side and send the whole list. Making this additive would double every\nquantity they send.",
+        "properties": {
+          "equipment": {
+            "items": {
+              "$ref": "#/components/schemas/EquipmentSelection"
+            },
+            "title": "Equipment",
+            "type": "array"
+          }
+        },
+        "required": [
+          "equipment"
+        ],
+        "title": "BookingEquipmentSet",
+        "type": "object"
+      },
       "BookingEventKind": {
         "description": "Mirrors the timeline types in src/pages/BookingsList.tsx.",
         "enum": [
@@ -2411,7 +2428,7 @@
         "type": "string"
       },
       "BookingUpdate": {
-        "description": "Edits allowed before payment completes \u2014 mirrors the Edit Booking drawer.",
+        "description": "Edits allowed on a booking \u2014 mirrors the Edit Booking drawer.\n\nEvery field is optional and distinguishable from \"not sent\" via\n`exclude_unset`, which the handler relies on: sending `equipment: []` clears the\nkit, whereas omitting it must leave the existing kit alone. Those are different\nintentions and a plain `or` cannot tell them apart.",
         "properties": {
           "court_id": {
             "anyOf": [
@@ -2424,6 +2441,31 @@
               }
             ],
             "title": "Court Id"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
           },
           "discount": {
             "anyOf": [
@@ -8337,11 +8379,12 @@
         "type": "object"
       },
       "Role": {
-        "description": "Tenant-scoped roles. These mirror the frontend's Staff page exactly.",
+        "description": "Tenant-scoped roles. admin/manager/reception mirror the Staff page exactly.\n\nKIOSK is not a person \u2014 it is the shared login on the walk-in counter tablet,\nwhich is physically reachable by anyone standing in front of it. It sits BELOW\nreception on purpose: everything the dashboard exposes (revenue reports, the\nstaff list, settings, membership plans) is guarded at reception and above, so\nthe counter device cannot read the business out of the API even though it holds\na valid token for the academy.",
         "enum": [
           "admin",
           "manager",
-          "reception"
+          "reception",
+          "kiosk"
         ],
         "title": "Role",
         "type": "string"
@@ -13101,6 +13144,65 @@
           }
         ],
         "summary": "Cancel a booking",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/{booking_id}/equipment": {
+      "put": {
+        "description": "Replaces the whole kit list and re-prices. **Reachable by the POS counter**, unlike `PATCH /bookings/{id}` \u2014 adding a racket mid-game is counter work, rescheduling is not.\n\nA replacement, not an addition: send the complete list. Both frontends already merge against the booking's existing lines before calling.",
+        "operationId": "booking_setBookingEquipment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "booking_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Booking Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingEquipmentSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Set a booking's equipment",
         "tags": [
           "booking"
         ]

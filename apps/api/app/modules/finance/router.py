@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api_utils import Page, Params, get_or_404, paginate
-from app.auth.deps import RequireManager, RequireStaff
+from app.auth.deps import RequireKiosk, RequireManager, RequireStaff
 from app.core.errors import ConflictError, MailDeliveryError
 from app.core.mail import MailNotConfigured, Message, send_email
 from app.core.mail_templates import invoice_raised
@@ -149,7 +149,7 @@ async def get_invoice(invoice_id: uuid.UUID, db: Db, _: RequireStaff) -> Invoice
         "rather than issuing a second number for the same money."
     ),
 )
-async def invoice_booking(booking_id: uuid.UUID, db: Db, principal: RequireStaff) -> InvoiceOut:
+async def invoice_booking(booking_id: uuid.UUID, db: Db, principal: RequireKiosk) -> InvoiceOut:
     booking = await get_or_404(db, Booking, booking_id, label="Booking")
     existed = booking.id is not None and (
         await db.execute(select(Invoice.id).where(Invoice.booking_id == booking.id))
@@ -191,7 +191,7 @@ async def email_booking_invoice(
     booking_id: uuid.UUID,
     payload: InvoiceEmailRequest,
     db: Db,
-    _: RequireStaff,
+    _: RequireKiosk,
 ) -> InvoiceEmailResult:
     booking = await get_or_404(db, Booking, booking_id, label="Booking")
     invoice = await service.invoice_for_booking(db, booking)
@@ -274,7 +274,7 @@ async def list_payments(
         "that is nearly always a typo, and absorbing it creates a credit nobody tracks."
     ),
 )
-async def create_payment(payload: PaymentCreate, db: Db, principal: RequireStaff) -> PaymentOut:
+async def create_payment(payload: PaymentCreate, db: Db, principal: RequireKiosk) -> PaymentOut:
     payment = await service.record_payment(
         db,
         amount=payload.amount,

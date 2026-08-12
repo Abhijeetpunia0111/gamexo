@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     seed_admin_password: SecretStr | None = None
     seed_platform_admin_email: str | None = None
     seed_platform_admin_password: SecretStr | None = None
+    #: The walk-in counter's shared login. Separate from the admin credential on
+    #: purpose: it is typed into a tablet on a public counter and shared between
+    #: shifts, so it must never be the password that also opens the dashboard.
+    seed_kiosk_email: str | None = None
+    seed_kiosk_password: SecretStr | None = None
 
     @field_validator("database_url", "migration_database_url")
     @classmethod

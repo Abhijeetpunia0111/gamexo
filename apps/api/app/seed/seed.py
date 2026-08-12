@@ -66,6 +66,8 @@ class SeedIdentity:
     admin_password: str
     platform_admin_email: str
     platform_admin_password: str
+    kiosk_email: str
+    kiosk_password: str
 
 
 def _identity() -> SeedIdentity:
@@ -81,6 +83,8 @@ def _identity() -> SeedIdentity:
         "SEED_ADMIN_PASSWORD": settings.seed_admin_password,
         "SEED_PLATFORM_ADMIN_EMAIL": settings.seed_platform_admin_email,
         "SEED_PLATFORM_ADMIN_PASSWORD": settings.seed_platform_admin_password,
+        "SEED_KIOSK_EMAIL": settings.seed_kiosk_email,
+        "SEED_KIOSK_PASSWORD": settings.seed_kiosk_password,
     }
     missing = [name for name, value in required.items() if not value]
     if missing:
@@ -97,6 +101,8 @@ def _identity() -> SeedIdentity:
         admin_password=settings.seed_admin_password.get_secret_value(),
         platform_admin_email=str(settings.seed_platform_admin_email),
         platform_admin_password=settings.seed_platform_admin_password.get_secret_value(),
+        kiosk_email=str(settings.seed_kiosk_email),
+        kiosk_password=settings.seed_kiosk_password.get_secret_value(),
     )
 
 
@@ -181,6 +187,23 @@ async def _seed_tenant_data(tenant_id: uuid.UUID, identity: SeedIdentity) -> Non
             )
             created += 1
 
+        # The counter tablet's shared login. Not part of STAFF because it is not a
+        # person: no shift, no joining date, and its password comes from its own
+        # env var rather than being the admin's — the dashboard credential must not
+        # be the one left signed in on a tablet at a public counter.
+        if identity.kiosk_email.lower() not in existing_emails:
+            session.add(
+                User(
+                    email=identity.kiosk_email,
+                    password_hash=hash_password(identity.kiosk_password),
+                    full_name="Walk-in Counter",
+                    role=Role.KIOSK,
+                    status=UserStatus.ACTIVE,
+                    avatar_initials="POS",
+                )
+            )
+            created += 1
+
         print(f"  updated academy profile, created {created} staff user(s)")
         return tenant_settings.invoice_prefix
 
@@ -210,9 +233,11 @@ async def main() -> None:
     print(
         "\nDone.\n"
         f"  Academy      : {identity.tenant_name} ({identity.tenant_slug})\n"
-        f"  Staff login  : {identity.admin_email}\n"
+        f"  Dashboard    : {identity.admin_email} (admin)\n"
+        f"  POS counter  : {identity.kiosk_email} (kiosk — POS endpoints only)\n"
         f"  Platform     : {identity.platform_admin_email}\n"
-        "  Passwords    : as set in SEED_ADMIN_PASSWORD / SEED_PLATFORM_ADMIN_PASSWORD\n"
+        "  Passwords    : as set in SEED_ADMIN_PASSWORD / SEED_KIOSK_PASSWORD /\n"
+        "                 SEED_PLATFORM_ADMIN_PASSWORD\n"
         f"  Try          : curl -H 'X-Tenant-ID: {identity.tenant_slug}' "
         "http://localhost:8000/api/v1/health/tenant"
     )

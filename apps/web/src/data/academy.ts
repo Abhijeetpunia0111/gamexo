@@ -1,4 +1,4 @@
-import { GST_RATE, SPORTS, sportById } from './booking'
+import { GST_RATE, SPORTS, sportById, toPaise } from './booking'
 import { getStaff } from '../lib/db'
 
 /** Coaches are staff with role 'coach' — one roster, not a second one duplicated here. */
@@ -29,8 +29,8 @@ function buildPrograms(sportId: string, sportName: string, baseFee: number): Pro
     ['Advanced', 3, 1.6],
   ]
   return specs.map(([level, sessionsPerWeek, multiple]) => {
-    const fee = Math.round(baseFee * multiple)
-    const gst = Math.round(fee * GST_RATE)
+    const fee = toPaise(baseFee * multiple)
+    const gst = toPaise(fee * GST_RATE)
     return {
       id: `${sportId}-${level.toLowerCase()}`,
       sportId,

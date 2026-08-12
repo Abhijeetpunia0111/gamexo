@@ -1,4 +1,4 @@
-import { GST_RATE, SPORTS, type Sport } from './booking'
+import { GST_RATE, SPORTS, toPaise, type Sport } from './booking'
 
 export type Tier = 'bronze' | 'silver' | 'gold'
 
@@ -28,8 +28,8 @@ const TIER_BLURB: Record<Tier, string> = {
 }
 
 function buildPlan(sport: Sport, tier: Tier): MembershipPlan {
-  const fee = Math.round(sport.from * TIER_MULTIPLE[tier])
-  const gst = Math.round(fee * GST_RATE)
+  const fee = toPaise(sport.from * TIER_MULTIPLE[tier])
+  const gst = toPaise(fee * GST_RATE)
   return {
     id: `${sport.id}-${tier}`,
     sportId: sport.id,

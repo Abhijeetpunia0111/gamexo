@@ -259,7 +259,7 @@ export function useAddEquipmentToBooking() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (vars: { bookingId: string; equipment: { equipment_id: string; qty: number; mode?: 'rent' | 'buy'; unit?: 'single' | 'pack' }[] }) =>
-      api.updateBooking(vars.bookingId, { equipment: vars.equipment }),
+      api.setBookingEquipment(vars.bookingId, vars.equipment),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] })
       qc.invalidateQueries({ queryKey: queryKeys.equipment })
