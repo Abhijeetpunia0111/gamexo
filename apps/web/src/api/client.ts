@@ -364,6 +364,101 @@ export const api = {
       `/api/v1/equipment/${equipmentId}/movements`,
       { query },
     ),
+
+  /* ── Manage → Integrations ─────────────────────────────────────────────────
+   * Two halves of one screen. Payment gateways are the academy's own Razorpay /
+   * Cashfree / PhonePe accounts; booking platforms are the outbound API keys that
+   * let Playo and Hudle sell our courts.
+   *
+   * Everything here is admin-only except `activeGateway`, which the counter needs.
+   */
+
+  /** Supported gateways, the fields each one wants, and what is saved — one call.
+   *
+   *  No secret is ever in this response. A saved secret comes back as
+   *  `secret_hints`, the last four characters, which is enough to recognise a key
+   *  and useless to anyone who intercepts it. */
+  listPaymentProviders: () =>
+    request<Ok<'/api/v1/payments/providers', 'get'>>('/api/v1/payments/providers'),
+
+  /**
+   * Connect a gateway, or replace its credentials. Same call for both.
+   *
+   * **Send a secret field only when it changed.** Blank means "keep the stored
+   * value" — the browser never had the real secret, so an edit that only flips the
+   * mode must not submit an empty Key Secret and wipe a working key.
+   *
+   * 400 with `details.problems` (an array of plain-language strings) when the
+   * credentials do not look right — a test key saved as live, a missing field.
+   */
+  savePaymentProvider: (
+    provider: string,
+    body: { mode: 'test' | 'live'; values: Record<string, string>; verify?: boolean },
+  ) =>
+    request<Ok<'/api/v1/payments/providers/{provider}', 'put'>>(
+      `/api/v1/payments/providers/${provider}`,
+      { method: 'PUT', body },
+    ),
+
+  /** Re-check stored credentials against the provider.
+   *
+   *  `checked_live: false` means we could not actually ask — PhonePe and PayU have
+   *  no read-only endpoint to test against, or the call did not complete. That is
+   *  not the same as a wrong credential, and the UI must not show it as one. */
+  verifyPaymentProvider: (provider: string) =>
+    request<Ok<'/api/v1/payments/providers/{provider}/verify', 'post'>>(
+      `/api/v1/payments/providers/${provider}/verify`,
+      { method: 'POST' },
+    ),
+
+  /** Choose which surfaces this gateway collects for. Omit a field to leave it
+   *  alone — so changing the dashboard cannot silently reset the counter.
+   *
+   *  Turning a surface on takes it from whichever gateway currently holds it: only
+   *  one gateway can collect per surface, enforced by a unique index. */
+  setPaymentRouting: (provider: string, body: { collect_on_web?: boolean; collect_on_pos?: boolean }) =>
+    request<Ok<'/api/v1/payments/providers/{provider}/routing', 'patch'>>(
+      `/api/v1/payments/providers/${provider}/routing`,
+      { method: 'PATCH', body },
+    ),
+
+  /** Delete the stored credentials. Also the only way to remove a secret, since a
+   *  blank field on save means "keep". */
+  disconnectPaymentProvider: (provider: string) =>
+    request<void>(`/api/v1/payments/providers/${provider}`, { method: 'DELETE' }),
+
+  /** Which gateway collects on this surface. `null` — not an error — means none is
+   *  configured and the counter takes cash/UPI as before. Public half only. */
+  activeGateway: (surface: 'web' | 'pos') =>
+    request<Ok<'/api/v1/payments/active', 'get'>>('/api/v1/payments/active', {
+      query: { surface },
+    }),
+
+  listPartners: () => request<Ok<'/api/v1/partners', 'get'>>('/api/v1/partners'),
+
+  /** The response carries `api_key` and it is **the only time it exists in a form
+   *  anyone can copy** — only a hash is stored. Show it, do not log it. */
+  createPartner: (body: { name: string; slug: string }) =>
+    request<Ok<'/api/v1/partners', 'post', 201>>('/api/v1/partners', { method: 'POST', body }),
+
+  /** `is_active: false` revokes immediately. Bookings the partner already made are
+   *  untouched and keep their `source_platform`. */
+  updatePartner: (partnerId: string, body: { name?: string; is_active?: boolean }) =>
+    request<Ok<'/api/v1/partners/{partner_id}', 'patch'>>(`/api/v1/partners/${partnerId}`, {
+      method: 'PATCH',
+      body,
+    }),
+
+  /** Invalidates the old key the moment it returns — there is no overlap window. */
+  rotatePartnerKey: (partnerId: string) =>
+    request<Ok<'/api/v1/partners/{partner_id}/rotate-key', 'post'>>(
+      `/api/v1/partners/${partnerId}/rotate-key`,
+      { method: 'POST' },
+    ),
+
+  /** 409 while any booking still references the partner — revoke instead. */
+  deletePartner: (partnerId: string) =>
+    request<void>(`/api/v1/partners/${partnerId}`, { method: 'DELETE' }),
 }
 
 export { request, BASE_URL, TENANT }

@@ -384,6 +384,18 @@ class Booking(TenantScoped):
             using="gist",
             where=text("status <> 'cancelled'"),
         ),
+        # Idempotency for the partner gateway. A platform that retries a create —
+        # after a timeout, say — must not end up selling the court twice under two
+        # of our booking ids. Partial index: `external_ref` is NULL for every
+        # booking made at the counter, and those must not collide with each other.
+        Index(
+            "uq_booking_partner_external_ref",
+            "tenant_id",
+            "created_by_partner_id",
+            "external_ref",
+            unique=True,
+            postgresql_where=text("external_ref IS NOT NULL"),
+        ),
         Index("ix_booking_tenant_court_start", "tenant_id", "court_id", "starts_at"),
         Index("ix_booking_tenant_start", "tenant_id", "starts_at"),
         Index("ix_booking_tenant_customer", "tenant_id", "customer_id"),
@@ -434,6 +446,32 @@ class Booking(TenantScoped):
     booking_type: Mapped[BookingType] = mapped_column(
         enum_type(BookingType, name="booking_type"), default=BookingType.WALKIN, nullable=False
     )
+
+    # ── Where this booking came from ─────────────────────────────────────────
+    #
+    # Two columns rather than one, for the same reason customer_name sits next to
+    # customer_id: the FK is what authorisation is decided on, the string is what
+    # survives.
+    #
+    # `created_by_partner_id` is the ONLY thing the gateway trusts when deciding
+    # whether a partner may read or cancel a booking. Matching on the slug instead
+    # would mean anyone who could set that string could reach another platform's
+    # bookings.
+    #
+    # `source_platform` is a denormalised snapshot of the partner's slug, so a
+    # booking still says "playo" in reports and on the bookings list after the
+    # integration is deleted — and so answering "where did this come from?" costs
+    # no join. NULL means it was made here: counter, dashboard, or seed.
+    created_by_partner_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("integration_partner.id", ondelete="RESTRICT")
+    )
+    source_platform: Mapped[str | None] = mapped_column(String(50))
+
+    #: The partner's own identifier for this booking. Carried so a reconciliation
+    #: run can line our rows up against theirs, and so a retried create is
+    #: recognised as the same booking rather than double-selling the court — see
+    #: the unique index in __table_args__.
+    external_ref: Mapped[str | None] = mapped_column(String(120))
 
     court_charge: Mapped[Decimal] = mapped_column(money(), default=0, nullable=False)
     equipment_charge: Mapped[Decimal] = mapped_column(money(), default=0, nullable=False)

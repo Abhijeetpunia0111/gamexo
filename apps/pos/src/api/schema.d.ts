@@ -797,6 +797,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gateway/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Free slots for a day
+         * @description Reflects **every** booking — walk-ins at the counter, the dashboard, and other platforms — so a slot sold here is immediately unavailable to you.
+         *
+         *     A slot marked `available` is not a reservation. Between this call and your `POST /gateway/bookings`, someone at the counter may take it; the create then returns **409**. Treat that as authoritative and mark the slot sold out — it is the database refusing to double-book the court, not a transient error to retry.
+         */
+        get: operations["gateway_availability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your bookings
+         * @description Only bookings made through your own integration. Never walk-ins, and never another platform's.
+         */
+        get: operations["gateway_listBookings"];
+        put?: never;
+        /**
+         * Claim a slot
+         * @description Returns **409** if the court is already taken for any part of the window — by another platform or by a walk-in. That check is a Postgres exclusion constraint, so it holds under concurrency: two platforms claiming the same slot at the same instant, one wins.
+         *
+         *     Send `external_ref` (your own booking id). Repeating a create with the same `external_ref` returns the booking you already made instead of a second one, so a timeout on your side is safe to retry.
+         */
+        post: operations["gateway_createBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/bookings/{booking_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One of your bookings
+         * @description **404** for a booking your integration did not create, including walk-ins and other platforms' bookings.
+         */
+        get: operations["gateway_getBooking"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/bookings/{booking_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release one of your bookings
+         * @description Frees the slot for everyone — it becomes available to the counter and to other platforms immediately. Idempotent: cancelling twice is not an error.
+         */
+        post: operations["gateway_cancelBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -1149,6 +1237,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/partners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List integrations */
+        get: operations["gateway_listPartners"];
+        put?: never;
+        /**
+         * Add an integration and mint its key
+         * @description **The key in this response is shown once.** Only its hash is stored, so it cannot be recovered — a partner who loses it needs a rotation, not a lookup.
+         */
+        post: operations["gateway_createPartner"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partners/{partner_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an integration
+         * @description Refused with **409** while any booking still references it — the FK is RESTRICT on purpose. A booking has to keep answering 'where did this come from?' long after the integration ends, so revoke with `is_active: false` rather than deleting.
+         */
+        delete: operations["gateway_deletePartner"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename or revoke an integration
+         * @description Setting `is_active: false` revokes access immediately — the next gateway request with that key is refused. Bookings the partner already made are untouched and keep their `source_platform`.
+         */
+        patch: operations["gateway_updatePartner"];
+        trace?: never;
+    };
+    "/api/v1/partners/{partner_id}/rotate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a new key
+         * @description Invalidates the old key the moment this returns — there is no overlap window, so coordinate with the partner before rotating a live integration.
+         */
+        post: operations["gateway_rotateKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/payments": {
         parameters: {
             query?: never;
@@ -1170,6 +1323,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payments/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which gateway collects on this surface
+         * @description What a checkout calls before starting a payment. Returns `null` when no gateway is configured for the surface, which means collect by cash or UPI at the counter as before — not an error.
+         *
+         *     Readable by the counter tablet, unlike the rest of this module: the POS has to know which gateway to charge through. Only the public half is returned — the key id a client SDK needs. Signing an order stays server-side.
+         */
+        get: operations["payments_activeGateway"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/payments/overview": {
         parameters: {
             query?: never;
@@ -1184,6 +1359,102 @@ export interface paths {
         get: operations["finance_paymentsOverview"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payment gateways and how this academy has configured them
+         * @description Everything the Integrations screen needs in one call: the gateways we support, the fields each one wants, and this academy's saved configuration where it exists.
+         *
+         *     **No secret is ever in this response.** Saved secrets come back as `secret_hints` — the last four characters — which is enough to recognise a key and useless to anyone who intercepts it.
+         */
+        get: operations["payments_listProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/providers/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Connect a gateway, or replace its credentials
+         * @description Idempotent — the same call connects a new gateway and edits an existing one, because from the screen's point of view they are the same action.
+         *
+         *     **Leave a secret field blank to keep the stored value.** The browser was never sent the real secret, so an edit that only changes the mode would otherwise wipe a working key.
+         *
+         *     Credentials are checked for shape before saving (a test key saved as live is rejected with **400** and per-field messages) and then, unless `verify` is false, against the provider itself. A failed verification does **not** fail the save: an unreachable provider is not a wrong key.
+         */
+        put: operations["payments_upsertProvider"];
+        post?: never;
+        /**
+         * Disconnect a gateway
+         * @description Deletes the stored credentials outright. This is also the only way to remove a secret — a blank field on save means 'keep the stored value', so there is no half-configured state to get stuck in.
+         *
+         *     If this gateway was collecting for a surface, that surface is left with no gateway and stops taking online payments until another is chosen.
+         */
+        delete: operations["payments_deleteProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/providers/{provider}/routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Choose which surfaces this gateway collects for
+         * @description Turning a surface on takes it away from whichever gateway currently holds it — only one gateway can collect for the dashboard, and one for the POS. That is a unique index in Postgres, not a promise this handler makes.
+         *
+         *     The two surfaces are independent on purpose: an academy can move online payments to a new gateway while the counter tablet stays on the old one.
+         */
+        patch: operations["payments_updateRouting"];
+        trace?: never;
+    };
+    "/api/v1/payments/providers/{provider}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-check stored credentials against the provider
+         * @description For the case a key worked when it was pasted and has since been revoked or rotated at the provider — which otherwise stays invisible until a customer cannot pay.
+         *
+         *     `checked_live: false` means we could not actually ask: either the provider has no read-only endpoint to test against (PhonePe and PayU sign each request, so the only way to exercise a credential is to start a payment) or the call did not complete. Not the same as a wrong credential.
+         */
+        post: operations["payments_verifyProvider"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1513,6 +1784,23 @@ export interface components {
             sports_offered: number;
             /** Total Coaches */
             total_coaches: number;
+        };
+        /**
+         * ActiveGatewayOut
+         * @description What a checkout needs to start a payment on one surface.
+         *
+         *     `public_config` only — the key id a client SDK needs and nothing more. The
+         *     secret never leaves the server; signing an order is a server-side call.
+         */
+        ActiveGatewayOut: {
+            /** Label */
+            label: string;
+            mode: components["schemas"]["ProviderMode"];
+            provider: components["schemas"]["PaymentProvider"];
+            /** Public Config */
+            public_config: {
+                [key: string]: unknown;
+            };
         };
         /** AdContractCreate */
         AdContractCreate: {
@@ -2126,6 +2414,8 @@ export interface components {
             equipment: components["schemas"]["EquipmentLineOut"][];
             /** Equipment Charge */
             equipment_charge: string;
+            /** External Ref */
+            external_ref?: string | null;
             /**
              * Id
              * Format: uuid
@@ -2136,6 +2426,8 @@ export interface components {
             /** Payment Method */
             payment_method: string | null;
             payment_status: components["schemas"]["PaymentStatus"];
+            /** Source Platform */
+            source_platform?: string | null;
             /**
              * Sport Id
              * Format: uuid
@@ -2237,6 +2529,8 @@ export interface components {
             equipment: components["schemas"]["EquipmentLineOut"][];
             /** Equipment Charge */
             equipment_charge: string;
+            /** External Ref */
+            external_ref?: string | null;
             /**
              * Id
              * Format: uuid
@@ -2247,6 +2541,8 @@ export interface components {
             /** Payment Method */
             payment_method: string | null;
             payment_status: components["schemas"]["PaymentStatus"];
+            /** Source Platform */
+            source_platform?: string | null;
             /**
              * Sport Id
              * Format: uuid
@@ -3216,6 +3512,16 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * IntegrationsOut
+         * @description Everything the payment half of the screen needs, in one request.
+         */
+        IntegrationsOut: {
+            /** Providers */
+            providers: components["schemas"]["ProviderOut"][];
+            /** Secrets Available */
+            secrets_available: boolean;
+        };
         /** InvoiceCreate */
         InvoiceCreate: {
             /** Customer Id */
@@ -3895,6 +4201,208 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PartnerBookingCancel */
+        PartnerBookingCancel: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /** PartnerBookingCreate */
+        PartnerBookingCreate: {
+            /**
+             * Court Id
+             * Format: uuid
+             */
+            court_id: string;
+            /** Customer Name */
+            customer_name: string;
+            /** Customer Phone */
+            customer_phone?: string | null;
+            /** Duration Min */
+            duration_min: number;
+            /** External Ref */
+            external_ref?: string | null;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+        };
+        /**
+         * PartnerBookingOut
+         * @description What a partner gets back about their own booking.
+         *
+         *     The money fields are included because the partner sold the slot and needs to
+         *     reconcile what it costs. The customer's phone is echoed back because they
+         *     supplied it. Nothing here reveals anything about anyone else's booking.
+         */
+        PartnerBookingOut: {
+            /** Amount Paid */
+            amount_paid: string;
+            /** Court Charge */
+            court_charge: string;
+            /**
+             * Court Id
+             * Format: uuid
+             */
+            court_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Customer Name */
+            customer_name: string;
+            /** Customer Phone */
+            customer_phone: string | null;
+            /** Duration Min */
+            duration_min: number;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** External Ref */
+            external_ref: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Payment Status */
+            payment_status: string;
+            /** Source Platform */
+            source_platform: string | null;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /** Status */
+            status: string;
+            /** Taxes */
+            taxes: string;
+            /** Total */
+            total: string;
+        };
+        /** PartnerCourtAvailability */
+        PartnerCourtAvailability: {
+            /**
+             * Court Id
+             * Format: uuid
+             */
+            court_id: string;
+            /** Court Name */
+            court_name: string;
+            /** Is Bookable */
+            is_bookable: boolean;
+            /** Slots */
+            slots: components["schemas"]["PartnerSlot"][];
+            /**
+             * Sport Id
+             * Format: uuid
+             */
+            sport_id: string;
+            /** Sport Name */
+            sport_name: string;
+        };
+        /** PartnerCreate */
+        PartnerCreate: {
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /** PartnerOut */
+        PartnerOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Key Prefix */
+            key_prefix: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * PartnerSlot
+         * @description One bookable window.
+         *
+         *     Note what is absent: `blocked_by_booking_id`. A partner learns THAT a slot is
+         *     taken, never which booking took it — an internal id handed out here would let
+         *     a platform enumerate our bookings by polling.
+         */
+        PartnerSlot: {
+            /** Available */
+            available: boolean;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Is Peak */
+            is_peak: boolean;
+            /** Rate */
+            rate: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+        };
+        /** PartnerUpdate */
+        PartnerUpdate: {
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Name */
+            name?: string | null;
+        };
+        /**
+         * PartnerWithKey
+         * @description Returned once, at creation and rotation, and never again.
+         *
+         *     Only the hash is stored, so this is the single moment the key exists in a form
+         *     anyone can copy. The field name says so, because a partner integration lost to
+         *     "we didn't write it down" costs an afternoon.
+         */
+        PartnerWithKey: {
+            /**
+             * Api Key
+             * @description Shown once. Store it now — it cannot be recovered.
+             */
+            api_key: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Key Prefix */
+            key_prefix: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
         /** PaymentCreate */
         PaymentCreate: {
             /** Amount */
@@ -3943,6 +4451,11 @@ export interface components {
             reference: string | null;
             state: components["schemas"]["PaymentState"];
         };
+        /**
+         * PaymentProvider
+         * @enum {string}
+         */
+        PaymentProvider: "razorpay" | "cashfree" | "phonepe" | "payu" | "stripe";
         /**
          * PaymentState
          * @enum {string}
@@ -4159,6 +4672,113 @@ export interface components {
             /** Sport Id */
             sport_id?: string | null;
         };
+        /**
+         * ProviderConfigOut
+         * @description A connected gateway, with everything secret removed.
+         *
+         *     `secret_hints` is the last four characters of each secret — enough to recognise
+         *     a key, useless to anyone who steals the response.
+         */
+        ProviderConfigOut: {
+            /** Collect On Pos */
+            collect_on_pos: boolean;
+            /** Collect On Web */
+            collect_on_web: boolean;
+            /** Is Configured */
+            is_configured: boolean;
+            /** Last Verification Error */
+            last_verification_error: string | null;
+            /** Last Verified At */
+            last_verified_at: string | null;
+            mode: components["schemas"]["ProviderMode"];
+            provider: components["schemas"]["PaymentProvider"];
+            /** Public Config */
+            public_config: {
+                [key: string]: unknown;
+            };
+            /** Secret Hints */
+            secret_hints: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By Email */
+            updated_by_email: string | null;
+        };
+        /** ProviderConfigUpsert */
+        ProviderConfigUpsert: {
+            /** @default test */
+            mode?: components["schemas"]["ProviderMode"];
+            /** Values */
+            values?: {
+                [key: string]: string;
+            };
+            /**
+             * Verify
+             * @default true
+             */
+            verify?: boolean;
+        };
+        /**
+         * ProviderFieldOut
+         * @description One input the Integrations form should render.
+         */
+        ProviderFieldOut: {
+            /** Help */
+            help: string;
+            /** Label */
+            label: string;
+            /** Mode Prefixes */
+            mode_prefixes: {
+                [key: string]: string;
+            };
+            /** Name */
+            name: string;
+            /** Placeholder */
+            placeholder: string;
+            /** Required */
+            required: boolean;
+            /** Secret */
+            secret: boolean;
+        };
+        /**
+         * ProviderMode
+         * @description Which of the provider's two worlds a credential belongs to.
+         *
+         *     Kept explicit rather than inferred from the key, because only some providers
+         *     encode it in the credential — Cashfree and PhonePe pick test vs live by which
+         *     hostname you call, so nothing about the key itself would tell us.
+         * @enum {string}
+         */
+        ProviderMode: "test" | "live";
+        /**
+         * ProviderOut
+         * @description A gateway we support, and this academy's configuration of it if any.
+         */
+        ProviderOut: {
+            config: components["schemas"]["ProviderConfigOut"] | null;
+            /** Credentials Url */
+            credentials_url: string;
+            /** Docs Url */
+            docs_url: string;
+            /** Fields */
+            fields: components["schemas"]["ProviderFieldOut"][];
+            id: components["schemas"]["PaymentProvider"];
+            /** Label */
+            label: string;
+            /** Supports Live Check */
+            supports_live_check: boolean;
+            /** Tagline */
+            tagline: string;
+        };
+        /** ProviderSaveOut */
+        ProviderSaveOut: {
+            config: components["schemas"]["ProviderConfigOut"];
+            verification: components["schemas"]["VerificationOut"] | null;
+        };
         /** QuoteOut */
         QuoteOut: {
             /** Court Charge */
@@ -4232,6 +4852,20 @@ export interface components {
          * @enum {string}
          */
         Role: "admin" | "manager" | "reception" | "kiosk";
+        /**
+         * RoutingUpdate
+         * @description Which surfaces this gateway collects for.
+         *
+         *     Omitted means unchanged, so the dashboard toggle cannot silently reset the POS.
+         *     Setting either to true takes it away from whichever gateway currently holds it —
+         *     only one gateway can collect for a surface.
+         */
+        RoutingUpdate: {
+            /** Collect On Pos */
+            collect_on_pos?: boolean | null;
+            /** Collect On Web */
+            collect_on_web?: boolean | null;
+        };
         /** SessionCreate */
         SessionCreate: {
             /**
@@ -4953,6 +5587,15 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VerificationOut */
+        VerificationOut: {
+            /** Checked Live */
+            checked_live: boolean;
+            /** Message */
+            message: string;
+            /** Ok */
+            ok: boolean;
         };
     };
     responses: never;
@@ -6924,6 +7567,186 @@ export interface operations {
             };
         };
     };
+    gateway_availability: {
+        parameters: {
+            query: {
+                /** @description Any instant on the target day */
+                date: string;
+                duration_min?: number;
+                sport_id?: string | null;
+                court_id?: string | null;
+                slot_minutes?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerCourtAvailability"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_listBookings: {
+        parameters: {
+            query?: {
+                /** @description starts_at >= this */
+                from_date?: string | null;
+                /** @description starts_at < this */
+                to_date?: string | null;
+                limit?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerBookingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_createBooking: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerBookingCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerBookingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_getBooking: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerBookingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_cancelBooking: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerBookingCancel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerBookingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_health: {
         parameters: {
             query?: never;
@@ -7666,6 +8489,154 @@ export interface operations {
             };
         };
     };
+    gateway_listPartners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerOut"][];
+                };
+            };
+        };
+    };
+    gateway_createPartner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerWithKey"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_deletePartner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                partner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_updatePartner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                partner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    gateway_rotateKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                partner_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerWithKey"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     finance_listPayments: {
         parameters: {
             query?: {
@@ -7737,6 +8708,37 @@ export interface operations {
             };
         };
     };
+    payments_activeGateway: {
+        parameters: {
+            query?: {
+                surface?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveGatewayOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     finance_paymentsOverview: {
         parameters: {
             query?: {
@@ -7756,6 +8758,156 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaymentsOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    payments_listProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationsOut"];
+                };
+            };
+        };
+    };
+    payments_upsertProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["PaymentProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderConfigUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSaveOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    payments_deleteProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["PaymentProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    payments_updateRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["PaymentProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    payments_verifyProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["PaymentProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationOut"];
                 };
             };
             /** @description Validation Error */

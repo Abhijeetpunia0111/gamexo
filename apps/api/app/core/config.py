@@ -47,6 +47,24 @@ class Settings(BaseSettings):
     # ── HTTP ────────────────────────────────────────────────────────────────
     cors_origins: list[str] = Field(default_factory=list)
 
+    # ── Secrets at rest ─────────────────────────────────────────────────────
+    #
+    # Encrypts credentials an academy gives us for its own third-party accounts —
+    # today, payment gateway key secrets. Unlike a password these cannot be hashed:
+    # we have to replay them to Razorpay/Cashfree on every charge, so they must be
+    # recoverable. What makes that safe is that the key is here, in the environment,
+    # and not in the database — a stolen dump decrypts to nothing.
+    #
+    # Generate one with:
+    #   python -c "from app.core.crypto import generate_key; print(generate_key())"
+    #
+    # Comma-separate to rotate: the first key encrypts, all of them decrypt, so
+    # old ciphertext keeps opening while new writes move to the new key.
+    #
+    # Optional, and absent by default. A deployment that has not set it simply
+    # cannot store payment credentials; everything else works untouched.
+    secrets_encryption_key: SecretStr | None = None
+
     # ── Email ───────────────────────────────────────────────────────────────
     #
     # Two transports, picked automatically: Resend's HTTP API when RESEND_API_KEY is

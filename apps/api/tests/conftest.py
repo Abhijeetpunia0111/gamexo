@@ -40,6 +40,10 @@ os.environ["ALLOW_TENANT_HEADER"] = "true"
 os.environ["TENANT_BASE_DOMAIN"] = "gamexo.app"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-that-is-long-enough-for-the-validator"
 os.environ["ACCESS_TOKEN_TTL_MINUTES"] = "30"
+# Fixed rather than generated per run, so a credential written by one test run is
+# still readable by the next against a database that was not recreated. A valid
+# Fernet key is 32 bytes, url-safe base64; this one decodes to obvious filler.
+os.environ["SECRETS_ENCRYPTION_KEY"] = "Z2FtZXhvLXRlc3Qta2V5LW5vdC1mb3ItcmVhbC11c2U="
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402

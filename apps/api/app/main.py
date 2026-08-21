@@ -22,6 +22,9 @@ from app.modules.admin import router as admin_router
 from app.modules.advertising import router as advertising_router
 from app.modules.booking import router as booking_router
 from app.modules.finance import router as finance_router
+from app.modules.gateway import admin_router as gateway_admin_router
+from app.modules.gateway import router as gateway_router
+from app.modules.payments import router as payments_router
 from app.modules.reporting import router as reporting_router
 from app.tenancy.deps import TenantCtx
 
@@ -111,8 +114,26 @@ def create_app() -> FastAPI:
                 "name": "finance",
                 "description": "Invoices, payments, membership plans and subscriptions.",
             },
+            {
+                "name": "payments",
+                "description": (
+                    "Payment gateway configuration. An academy connects its own "
+                    "Razorpay/Cashfree/PhonePe account and chooses which gateway "
+                    "collects on the dashboard and which on the counter tablet. "
+                    "Key secrets are encrypted at rest and never returned."
+                ),
+            },
             {"name": "platform", "description": "Platform operator control plane."},
             {"name": "reporting", "description": "Dashboard and Reports aggregates."},
+            {
+                "name": "gateway",
+                "description": (
+                    "Externalisation gateway. Third-party platforms (Playo, Hudle) read "
+                    "availability and claim slots under a revocable API key, so a court "
+                    "is never sold twice. Availability reflects every booking; a partner "
+                    "can only read or cancel bookings it created itself."
+                ),
+            },
             {"name": "health", "description": "Liveness and tenancy diagnostics."},
         ],
     )
@@ -146,6 +167,9 @@ def create_app() -> FastAPI:
     api.include_router(admin_router.router)
     api.include_router(reporting_router.router)
     api.include_router(finance_router.router)
+    api.include_router(gateway_router.router)
+    api.include_router(gateway_admin_router.router)
+    api.include_router(payments_router.router)
     api.include_router(_health_router())
     app.include_router(api)
 

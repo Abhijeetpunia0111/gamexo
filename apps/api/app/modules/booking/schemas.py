@@ -436,6 +436,14 @@ class BookingOut(BaseModel):
     payment_method: str | None
     equipment: list[EquipmentLineOut]
     notes: str | None
+
+    #: Which platform sold this, e.g. "playo". NULL means it was taken here — the
+    #: counter, the dashboard, or the seed. Denormalised from the partner at creation
+    #: so the answer survives the integration being revoked or deleted.
+    source_platform: str | None = None
+    #: That platform's own booking id, for reconciling their ledger against ours.
+    external_ref: str | None = None
+
     created_at: datetime
 
 

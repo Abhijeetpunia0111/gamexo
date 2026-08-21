@@ -935,68 +935,11 @@ async def cancel_booking(
     booking_id: uuid.UUID, payload: BookingCancel, db: Db, principal: RequireStaff
 ) -> BookingDetail:
     booking = await get_or_404(db, Booking, booking_id, label="Booking")
-    if booking.status is BookingStatus.CANCELLED:
-        return await _detail(db, booking)
-
-    booking.status = BookingStatus.CANCELLED
-    booking.cancelled_at = datetime.now(UTC)
-    booking.cancellation_reason = payload.reason
-
-    # Anything still out comes back to the shelf.
-    outstanding = (
-        (
-            await db.execute(
-                select(EquipmentMovement).where(
-                    EquipmentMovement.booking_id == booking.id,
-                    EquipmentMovement.kind == MovementKind.ISSUE,
-                )
-            )
-        )
-        .scalars()
-        .all()
+    # release_booking is a no-op on an already-cancelled booking, so pressing cancel
+    # twice returns the same booking rather than double-returning its equipment.
+    await service.release_booking(
+        db, booking, reason=payload.reason, actor_user_id=principal.id
     )
-    returned = (
-        (
-            await db.execute(
-                select(EquipmentMovement).where(
-                    EquipmentMovement.booking_id == booking.id,
-                    EquipmentMovement.kind == MovementKind.RETURN,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    still_out: dict[uuid.UUID, int] = {}
-    for movement in outstanding:
-        still_out[movement.equipment_id] = still_out.get(movement.equipment_id, 0) + movement.qty
-    for movement in returned:
-        still_out[movement.equipment_id] = still_out.get(movement.equipment_id, 0) - movement.qty
-
-    for equipment_id, qty in still_out.items():
-        if qty <= 0:
-            continue
-        item = await db.get(Equipment, equipment_id)
-        if item is not None:
-            await service.apply_movement(
-                db,
-                item,
-                kind=MovementKind.RETURN,
-                qty=qty,
-                booking_id=booking.id,
-                note="Auto-returned on cancellation",
-                actor_user_id=principal.id,
-            )
-
-    await service.record_event(
-        db,
-        booking,
-        kind=BookingEventKind.CANCELLED,
-        label="Booking Cancelled",
-        detail=payload.reason,
-        actor_user_id=principal.id,
-    )
-    await db.flush()
     return await _detail(db, booking)
 
 

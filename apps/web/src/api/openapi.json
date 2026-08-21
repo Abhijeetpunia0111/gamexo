@@ -67,6 +67,34 @@
         "title": "AcademyOverview",
         "type": "object"
       },
+      "ActiveGatewayOut": {
+        "description": "What a checkout needs to start a payment on one surface.\n\n`public_config` only \u2014 the key id a client SDK needs and nothing more. The\nsecret never leaves the server; signing an order is a server-side call.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ProviderMode"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/PaymentProvider"
+          },
+          "public_config": {
+            "additionalProperties": true,
+            "title": "Public Config",
+            "type": "object"
+          }
+        },
+        "required": [
+          "provider",
+          "label",
+          "mode",
+          "public_config"
+        ],
+        "title": "ActiveGatewayOut",
+        "type": "object"
+      },
       "AdContractCreate": {
         "properties": {
           "brand": {
@@ -2061,6 +2089,17 @@
             "title": "Equipment Charge",
             "type": "string"
           },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2090,6 +2129,17 @@
           },
           "payment_status": {
             "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "source_platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Platform"
           },
           "sport_id": {
             "format": "uuid",
@@ -2327,6 +2377,17 @@
             "title": "Equipment Charge",
             "type": "string"
           },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2356,6 +2417,17 @@
           },
           "payment_status": {
             "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "source_platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Platform"
           },
           "sport_id": {
             "format": "uuid",
@@ -5263,6 +5335,28 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IntegrationsOut": {
+        "description": "Everything the payment half of the screen needs, in one request.",
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderOut"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "secrets_available": {
+            "title": "Secrets Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "secrets_available",
+          "providers"
+        ],
+        "title": "IntegrationsOut",
+        "type": "object"
+      },
       "InvoiceCreate": {
         "properties": {
           "customer_id": {
@@ -7309,6 +7403,447 @@
         "title": "Page[UserOut]",
         "type": "object"
       },
+      "PartnerBookingCancel": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PartnerBookingCancel",
+        "type": "object"
+      },
+      "PartnerBookingCreate": {
+        "properties": {
+          "court_id": {
+            "format": "uuid",
+            "title": "Court Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "duration_min": {
+            "maximum": 1440.0,
+            "minimum": 15.0,
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "court_id",
+          "starts_at",
+          "duration_min",
+          "customer_name"
+        ],
+        "title": "PartnerBookingCreate",
+        "type": "object"
+      },
+      "PartnerBookingOut": {
+        "description": "What a partner gets back about their own booking.\n\nThe money fields are included because the partner sold the slot and needs to\nreconcile what it costs. The customer's phone is echoed back because they\nsupplied it. Nothing here reveals anything about anyone else's booking.",
+        "properties": {
+          "amount_paid": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount Paid",
+            "type": "string"
+          },
+          "court_charge": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Court Charge",
+            "type": "string"
+          },
+          "court_id": {
+            "format": "uuid",
+            "title": "Court Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payment_status": {
+            "title": "Payment Status",
+            "type": "string"
+          },
+          "source_platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Platform"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "taxes": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Taxes",
+            "type": "string"
+          },
+          "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "external_ref",
+          "source_platform",
+          "court_id",
+          "starts_at",
+          "ends_at",
+          "duration_min",
+          "status",
+          "payment_status",
+          "customer_name",
+          "customer_phone",
+          "court_charge",
+          "taxes",
+          "total",
+          "amount_paid",
+          "created_at"
+        ],
+        "title": "PartnerBookingOut",
+        "type": "object"
+      },
+      "PartnerCourtAvailability": {
+        "properties": {
+          "court_id": {
+            "format": "uuid",
+            "title": "Court Id",
+            "type": "string"
+          },
+          "court_name": {
+            "title": "Court Name",
+            "type": "string"
+          },
+          "is_bookable": {
+            "title": "Is Bookable",
+            "type": "boolean"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerSlot"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "sport_id": {
+            "format": "uuid",
+            "title": "Sport Id",
+            "type": "string"
+          },
+          "sport_name": {
+            "title": "Sport Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "court_id",
+          "court_name",
+          "sport_id",
+          "sport_name",
+          "is_bookable",
+          "slots"
+        ],
+        "title": "PartnerCourtAvailability",
+        "type": "object"
+      },
+      "PartnerCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 50,
+            "minLength": 2,
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "title": "PartnerCreate",
+        "type": "object"
+      },
+      "PartnerOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "key_prefix",
+          "is_active",
+          "last_used_at",
+          "created_at"
+        ],
+        "title": "PartnerOut",
+        "type": "object"
+      },
+      "PartnerSlot": {
+        "description": "One bookable window.\n\nNote what is absent: `blocked_by_booking_id`. A partner learns THAT a slot is\ntaken, never which booking took it \u2014 an internal id handed out here would let\na platform enumerate our bookings by polling.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "is_peak": {
+            "title": "Is Peak",
+            "type": "boolean"
+          },
+          "rate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at",
+          "available",
+          "rate",
+          "is_peak"
+        ],
+        "title": "PartnerSlot",
+        "type": "object"
+      },
+      "PartnerUpdate": {
+        "properties": {
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "PartnerUpdate",
+        "type": "object"
+      },
+      "PartnerWithKey": {
+        "description": "Returned once, at creation and rotation, and never again.\n\nOnly the hash is stored, so this is the single moment the key exists in a form\nanyone can copy. The field name says so, because a partner integration lost to\n\"we didn't write it down\" costs an afternoon.",
+        "properties": {
+          "api_key": {
+            "description": "Shown once. Store it now \u2014 it cannot be recovered.",
+            "title": "Api Key",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "key_prefix",
+          "is_active",
+          "last_used_at",
+          "created_at",
+          "api_key"
+        ],
+        "title": "PartnerWithKey",
+        "type": "object"
+      },
       "PaymentCreate": {
         "properties": {
           "amount": {
@@ -7501,6 +8036,17 @@
         ],
         "title": "PaymentOut",
         "type": "object"
+      },
+      "PaymentProvider": {
+        "enum": [
+          "razorpay",
+          "cashfree",
+          "phonepe",
+          "payu",
+          "stripe"
+        ],
+        "title": "PaymentProvider",
+        "type": "string"
       },
       "PaymentState": {
         "enum": [
@@ -8231,6 +8777,251 @@
         "title": "ProgramUpdate",
         "type": "object"
       },
+      "ProviderConfigOut": {
+        "description": "A connected gateway, with everything secret removed.\n\n`secret_hints` is the last four characters of each secret \u2014 enough to recognise\na key, useless to anyone who steals the response.",
+        "properties": {
+          "collect_on_pos": {
+            "title": "Collect On Pos",
+            "type": "boolean"
+          },
+          "collect_on_web": {
+            "title": "Collect On Web",
+            "type": "boolean"
+          },
+          "is_configured": {
+            "title": "Is Configured",
+            "type": "boolean"
+          },
+          "last_verification_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Verification Error"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Verified At"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ProviderMode"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/PaymentProvider"
+          },
+          "public_config": {
+            "additionalProperties": true,
+            "title": "Public Config",
+            "type": "object"
+          },
+          "secret_hints": {
+            "additionalProperties": true,
+            "title": "Secret Hints",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Email"
+          }
+        },
+        "required": [
+          "provider",
+          "mode",
+          "public_config",
+          "secret_hints",
+          "is_configured",
+          "collect_on_web",
+          "collect_on_pos",
+          "last_verified_at",
+          "last_verification_error",
+          "updated_by_email",
+          "updated_at"
+        ],
+        "title": "ProviderConfigOut",
+        "type": "object"
+      },
+      "ProviderConfigUpsert": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/ProviderMode",
+            "default": "test"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "object"
+          },
+          "verify": {
+            "default": true,
+            "title": "Verify",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderConfigUpsert",
+        "type": "object"
+      },
+      "ProviderFieldOut": {
+        "description": "One input the Integrations form should render.",
+        "properties": {
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mode_prefixes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Mode Prefixes",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "placeholder": {
+            "title": "Placeholder",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "placeholder",
+          "help",
+          "secret",
+          "required",
+          "mode_prefixes"
+        ],
+        "title": "ProviderFieldOut",
+        "type": "object"
+      },
+      "ProviderMode": {
+        "description": "Which of the provider's two worlds a credential belongs to.\n\nKept explicit rather than inferred from the key, because only some providers\nencode it in the credential \u2014 Cashfree and PhonePe pick test vs live by which\nhostname you call, so nothing about the key itself would tell us.",
+        "enum": [
+          "test",
+          "live"
+        ],
+        "title": "ProviderMode",
+        "type": "string"
+      },
+      "ProviderOut": {
+        "description": "A gateway we support, and this academy's configuration of it if any.",
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderConfigOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credentials_url": {
+            "title": "Credentials Url",
+            "type": "string"
+          },
+          "docs_url": {
+            "title": "Docs Url",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderFieldOut"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PaymentProvider"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "supports_live_check": {
+            "title": "Supports Live Check",
+            "type": "boolean"
+          },
+          "tagline": {
+            "title": "Tagline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "tagline",
+          "credentials_url",
+          "docs_url",
+          "supports_live_check",
+          "fields",
+          "config"
+        ],
+        "title": "ProviderOut",
+        "type": "object"
+      },
+      "ProviderSaveOut": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ProviderConfigOut"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "config",
+          "verification"
+        ],
+        "title": "ProviderSaveOut",
+        "type": "object"
+      },
       "QuoteOut": {
         "properties": {
           "court_charge": {
@@ -8389,6 +9180,35 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "RoutingUpdate": {
+        "description": "Which surfaces this gateway collects for.\n\nOmitted means unchanged, so the dashboard toggle cannot silently reset the POS.\nSetting either to true takes it away from whichever gateway currently holds it \u2014\nonly one gateway can collect for a surface.",
+        "properties": {
+          "collect_on_pos": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collect On Pos"
+          },
+          "collect_on_web": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collect On Web"
+          }
+        },
+        "title": "RoutingUpdate",
+        "type": "object"
       },
       "SessionCreate": {
         "properties": {
@@ -10691,6 +11511,29 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationOut": {
+        "properties": {
+          "checked_live": {
+            "title": "Checked Live",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "message",
+          "checked_live"
+        ],
+        "title": "VerificationOut",
         "type": "object"
       }
     },
@@ -14367,6 +15210,447 @@
         ]
       }
     },
+    "/api/v1/gateway/availability": {
+      "get": {
+        "description": "Reflects **every** booking \u2014 walk-ins at the counter, the dashboard, and other platforms \u2014 so a slot sold here is immediately unavailable to you.\n\nA slot marked `available` is not a reservation. Between this call and your `POST /gateway/bookings`, someone at the counter may take it; the create then returns **409**. Treat that as authoritative and mark the slot sold out \u2014 it is the database refusing to double-book the court, not a transient error to retry.",
+        "operationId": "gateway_availability",
+        "parameters": [
+          {
+            "description": "Any instant on the target day",
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "Any instant on the target day",
+              "format": "date-time",
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "duration_min",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 1440,
+              "minimum": 15,
+              "title": "Duration Min",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sport_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sport Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "court_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Court Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slot_minutes",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 240,
+              "minimum": 15,
+              "title": "Slot Minutes",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartnerCourtAvailability"
+                  },
+                  "title": "Response Gateway Availability",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Free slots for a day",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/api/v1/gateway/bookings": {
+      "get": {
+        "description": "Only bookings made through your own integration. Never walk-ins, and never another platform's.",
+        "operationId": "gateway_listBookings",
+        "parameters": [
+          {
+            "description": "starts_at >= this",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "starts_at >= this",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "starts_at < this",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "starts_at < this",
+              "title": "To Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartnerBookingOut"
+                  },
+                  "title": "Response Gateway Listbookings",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Your bookings",
+        "tags": [
+          "gateway"
+        ]
+      },
+      "post": {
+        "description": "Returns **409** if the court is already taken for any part of the window \u2014 by another platform or by a walk-in. That check is a Postgres exclusion constraint, so it holds under concurrency: two platforms claiming the same slot at the same instant, one wins.\n\nSend `external_ref` (your own booking id). Repeating a create with the same `external_ref` returns the booking you already made instead of a second one, so a timeout on your side is safe to retry.",
+        "operationId": "gateway_createBooking",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerBookingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBookingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Claim a slot",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/api/v1/gateway/bookings/{booking_id}": {
+      "get": {
+        "description": "**404** for a booking your integration did not create, including walk-ins and other platforms' bookings.",
+        "operationId": "gateway_getBooking",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "booking_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Booking Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBookingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "One of your bookings",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/api/v1/gateway/bookings/{booking_id}/cancel": {
+      "post": {
+        "description": "Frees the slot for everyone \u2014 it becomes available to the counter and to other platforms immediately. Idempotent: cancelling twice is not an error.",
+        "operationId": "gateway_cancelBooking",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "booking_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Booking Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-API-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerBookingCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerBookingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Release one of your bookings",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "description": "Names the database this process is actually talking to. Two schema-identical databases with the same tenant slug are indistinguishable from row counts alone, and guessing has cost real debugging time.",
@@ -15661,6 +16945,229 @@
         ]
       }
     },
+    "/api/v1/partners": {
+      "get": {
+        "operationId": "gateway_listPartners",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartnerOut"
+                  },
+                  "title": "Response Gateway Listpartners",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List integrations",
+        "tags": [
+          "gateway"
+        ]
+      },
+      "post": {
+        "description": "**The key in this response is shown once.** Only its hash is stored, so it cannot be recovered \u2014 a partner who loses it needs a rotation, not a lookup.",
+        "operationId": "gateway_createPartner",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerWithKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Add an integration and mint its key",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/api/v1/partners/{partner_id}": {
+      "delete": {
+        "description": "Refused with **409** while any booking still references it \u2014 the FK is RESTRICT on purpose. A booking has to keep answering 'where did this come from?' long after the integration ends, so revoke with `is_active: false` rather than deleting.",
+        "operationId": "gateway_deletePartner",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "partner_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Partner Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete an integration",
+        "tags": [
+          "gateway"
+        ]
+      },
+      "patch": {
+        "description": "Setting `is_active: false` revokes access immediately \u2014 the next gateway request with that key is refused. Bookings the partner already made are untouched and keep their `source_platform`.",
+        "operationId": "gateway_updatePartner",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "partner_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Partner Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Rename or revoke an integration",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
+    "/api/v1/partners/{partner_id}/rotate-key": {
+      "post": {
+        "description": "Invalidates the old key the moment this returns \u2014 there is no overlap window, so coordinate with the partner before rotating a live integration.",
+        "operationId": "gateway_rotateKey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "partner_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Partner Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerWithKey"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Issue a new key",
+        "tags": [
+          "gateway"
+        ]
+      }
+    },
     "/api/v1/payments": {
       "get": {
         "operationId": "finance_listPayments",
@@ -15838,6 +17345,64 @@
         ]
       }
     },
+    "/api/v1/payments/active": {
+      "get": {
+        "description": "What a checkout calls before starting a payment. Returns `null` when no gateway is configured for the surface, which means collect by cash or UPI at the counter as before \u2014 not an error.\n\nReadable by the counter tablet, unlike the rest of this module: the POS has to know which gateway to charge through. Only the public half is returned \u2014 the key id a client SDK needs. Signing an order stays server-side.",
+        "operationId": "payments_activeGateway",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "surface",
+            "required": false,
+            "schema": {
+              "default": "web",
+              "pattern": "^(web|pos)$",
+              "title": "Surface",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ActiveGatewayOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Payments Activegateway"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Which gateway collects on this surface",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
     "/api/v1/payments/overview": {
       "get": {
         "description": "Backs the stat cards and method breakdown on the Payments page.",
@@ -15908,6 +17473,232 @@
         "summary": "Collection summary",
         "tags": [
           "finance"
+        ]
+      }
+    },
+    "/api/v1/payments/providers": {
+      "get": {
+        "description": "Everything the Integrations screen needs in one call: the gateways we support, the fields each one wants, and this academy's saved configuration where it exists.\n\n**No secret is ever in this response.** Saved secrets come back as `secret_hints` \u2014 the last four characters \u2014 which is enough to recognise a key and useless to anyone who intercepts it.",
+        "operationId": "payments_listProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Payment gateways and how this academy has configured them",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/providers/{provider}": {
+      "delete": {
+        "description": "Deletes the stored credentials outright. This is also the only way to remove a secret \u2014 a blank field on save means 'keep the stored value', so there is no half-configured state to get stuck in.\n\nIf this gateway was collecting for a surface, that surface is left with no gateway and stops taking online payments until another is chosen.",
+        "operationId": "payments_deleteProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PaymentProvider"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Disconnect a gateway",
+        "tags": [
+          "payments"
+        ]
+      },
+      "put": {
+        "description": "Idempotent \u2014 the same call connects a new gateway and edits an existing one, because from the screen's point of view they are the same action.\n\n**Leave a secret field blank to keep the stored value.** The browser was never sent the real secret, so an edit that only changes the mode would otherwise wipe a working key.\n\nCredentials are checked for shape before saving (a test key saved as live is rejected with **400** and per-field messages) and then, unless `verify` is false, against the provider itself. A failed verification does **not** fail the save: an unreachable provider is not a wrong key.",
+        "operationId": "payments_upsertProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PaymentProvider"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderConfigUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderSaveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Connect a gateway, or replace its credentials",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/providers/{provider}/routing": {
+      "patch": {
+        "description": "Turning a surface on takes it away from whichever gateway currently holds it \u2014 only one gateway can collect for the dashboard, and one for the POS. That is a unique index in Postgres, not a promise this handler makes.\n\nThe two surfaces are independent on purpose: an academy can move online payments to a new gateway while the counter tablet stays on the old one.",
+        "operationId": "payments_updateRouting",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PaymentProvider"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Choose which surfaces this gateway collects for",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/v1/payments/providers/{provider}/verify": {
+      "post": {
+        "description": "For the case a key worked when it was pasted and has since been revoked or rotated at the provider \u2014 which otherwise stays invisible until a customer cannot pay.\n\n`checked_live: false` means we could not actually ask: either the provider has no read-only endpoint to test against (PhonePe and PayU sign each request, so the only way to exercise a credential is to start a payment) or the call did not complete. Not the same as a wrong credential.",
+        "operationId": "payments_verifyProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PaymentProvider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Re-check stored credentials against the provider",
+        "tags": [
+          "payments"
         ]
       }
     },
@@ -16990,12 +18781,20 @@
       "name": "finance"
     },
     {
+      "description": "Payment gateway configuration. An academy connects its own Razorpay/Cashfree/PhonePe account and chooses which gateway collects on the dashboard and which on the counter tablet. Key secrets are encrypted at rest and never returned.",
+      "name": "payments"
+    },
+    {
       "description": "Platform operator control plane.",
       "name": "platform"
     },
     {
       "description": "Dashboard and Reports aggregates.",
       "name": "reporting"
+    },
+    {
+      "description": "Externalisation gateway. Third-party platforms (Playo, Hudle) read availability and claim slots under a revocable API key, so a court is never sold twice. Availability reflects every booking; a partner can only read or cancel bookings it created itself.",
+      "name": "gateway"
     },
     {
       "description": "Liveness and tenancy diagnostics.",

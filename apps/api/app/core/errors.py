@@ -43,6 +43,19 @@ class PermissionDeniedError(AppError):
     code = "permission_denied"
 
 
+class InvalidInputError(AppError):
+    """A domain rule the request body is shaped correctly but still breaks.
+
+    Distinct from FastAPI's 422: that one means the JSON did not match the schema.
+    This means it did, and the values are still wrong in a way only the domain
+    knows — a Razorpay test key saved as live, say. Its own `code` so the frontend
+    can render `details` as field-level messages rather than a toast.
+    """
+
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "invalid_input"
+
+
 class TenantResolutionError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "tenant_unresolved"

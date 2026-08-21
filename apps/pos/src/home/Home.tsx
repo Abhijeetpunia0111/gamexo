@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthProvider'
 import checkinIllustration from '../assets/figma/home/checkin-illustration.png'
 import shopIllustration from '../assets/figma/home/shop-illustration.png'
 import academyIllustration from '../assets/figma/home/academy-illustration.png'
+import membershipIllustration from '../assets/figma/home/membership-illustration.png'
 import checkoutIcon from '../assets/figma/checkin/checkout.svg'
 
 function Tile({
@@ -96,6 +97,12 @@ export default function Home({ onNavigate }: { onNavigate: (view: View) => void 
           <Tile
             image={academyIllustration}
             title="Academy"
+            detail="Student attendance & membership"
+            onClick={() => onNavigate('academy')}
+          />
+          <Tile
+            image={membershipIllustration}
+            title="Membership"
             detail="Student attendance & membership"
             onClick={() => onNavigate('academy')}
           />

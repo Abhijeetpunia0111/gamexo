@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
-    "generate:api": "openapi-typescript $VITE_API_BASE_URL/openapi.json -o src/api/schema.d.ts --default-non-nullable false"
+    "generate:api": "../api/.venv/bin/python ../api/scripts/export_openapi.py src/api/openapi.json && openapi-typescript src/api/openapi.json -o src/api/schema.d.ts --default-non-nullable false"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",

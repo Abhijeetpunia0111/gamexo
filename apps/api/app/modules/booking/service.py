@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Iterable, Sequence
 
@@ -393,6 +393,96 @@ async def ensure_slot_free(
                 "conflicting_to": row.ends_at.isoformat(),
             },
         )
+
+
+async def release_booking(
+    session: AsyncSession,
+    booking: Booking,
+    *,
+    reason: str | None,
+    actor_user_id: uuid.UUID | None = None,
+    detail_prefix: str | None = None,
+) -> bool:
+    """Cancel a booking: free the slot, return outstanding kit, record the event.
+
+    Shared by the staff endpoint and the partner gateway, because cancelling is not
+    one field. The slot is only genuinely released once `status` is CANCELLED — the
+    exclusion constraint's `WHERE status <> 'cancelled'` is what lets someone else
+    book that court again — and any racket still signed out has to come back to the
+    shelf or `qty_available` drifts every time a booking is cancelled.
+
+    `actor_user_id` is None when a partner cancels: there is no staff member behind
+    the request. `detail_prefix` is how the timeline still names who did it.
+
+    Returns False if it was already cancelled, so callers can stay idempotent
+    without re-reading the row.
+    """
+    if booking.status is BookingStatus.CANCELLED:
+        return False
+
+    booking.status = BookingStatus.CANCELLED
+    booking.cancelled_at = datetime.now(UTC)
+    booking.cancellation_reason = reason
+
+    issued = (
+        (
+            await session.execute(
+                select(EquipmentMovement).where(
+                    EquipmentMovement.booking_id == booking.id,
+                    EquipmentMovement.kind == MovementKind.ISSUE,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    returned = (
+        (
+            await session.execute(
+                select(EquipmentMovement).where(
+                    EquipmentMovement.booking_id == booking.id,
+                    EquipmentMovement.kind == MovementKind.RETURN,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    still_out: dict[uuid.UUID, int] = {}
+    for movement in issued:
+        still_out[movement.equipment_id] = still_out.get(movement.equipment_id, 0) + movement.qty
+    for movement in returned:
+        still_out[movement.equipment_id] = still_out.get(movement.equipment_id, 0) - movement.qty
+
+    for equipment_id, qty in still_out.items():
+        if qty <= 0:
+            continue
+        item = await session.get(Equipment, equipment_id)
+        if item is not None:
+            await apply_movement(
+                session,
+                item,
+                kind=MovementKind.RETURN,
+                qty=qty,
+                booking_id=booking.id,
+                note="Auto-returned on cancellation",
+                actor_user_id=actor_user_id,
+            )
+
+    detail = reason
+    if detail_prefix:
+        detail = f"{detail_prefix}{f' — {reason}' if reason else ''}"
+
+    await record_event(
+        session,
+        booking,
+        kind=BookingEventKind.CANCELLED,
+        label="Booking Cancelled",
+        detail=detail,
+        actor_user_id=actor_user_id,
+    )
+    await session.flush()
+    return True
 
 
 async def record_event(

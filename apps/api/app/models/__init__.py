@@ -28,6 +28,12 @@ from app.modules.advertising.models import (
     SpotStatus,
     SpotType,
 )
+from app.modules.gateway.models import IntegrationPartner
+from app.modules.payments.models import (
+    PaymentProvider,
+    PaymentProviderConfig,
+    ProviderMode,
+)
 from app.modules.booking.models import (
     Booking,
     BookingEvent,
@@ -110,6 +116,7 @@ __all__ = [
     "DocumentCounter",
     "EnrollmentStatus",
     "Gender",
+    "IntegrationPartner",
     "Invoice",
     "Job",
     "JobState",
@@ -121,7 +128,10 @@ __all__ = [
     "MovementKind",
     "Payment",
     "PaymentMethod",
+    "PaymentProvider",
+    "PaymentProviderConfig",
     "PaymentState",
+    "ProviderMode",
     "Notification",
     "NotificationChannelConfig",
     "NotificationDelivery",

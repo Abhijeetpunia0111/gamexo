@@ -35,6 +35,7 @@ export const manageItems: { label: string; view: View }[] = [
   { label: 'Invoices', view: 'manageInvoices' },
   { label: 'Discount Coupons', view: 'manageCoupons' },
   { label: 'Payment Modes', view: 'managePaymentModes' },
+  { label: 'Integrations', view: 'manageIntegrations' },
   { label: 'Notifications', view: 'manageNotifications' },
   { label: 'Manage Staff', view: 'manageStaff' },
 ]

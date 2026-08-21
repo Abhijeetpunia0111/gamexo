@@ -12,6 +12,10 @@ dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "python-jose[cryptography]>=3.3.0",
+    # Declared directly, not leaned on as python-jose's transitive dependency:
+    # app/core/crypto.py imports Fernet itself to encrypt tenant payment
+    # credentials, and that must not break the day jose changes its extras.
+    "cryptography>=43.0.0",
     # The plan called for passlib[bcrypt]; passlib 1.7.4 (2020) cannot initialise its
     # bcrypt backend against bcrypt >= 5. See app/core/security.py for the detail.
     # Same algorithm, same $2b$ hash format.

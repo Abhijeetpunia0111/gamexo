@@ -9,6 +9,7 @@ import ActiveGames from './pos/ActiveGames'
 import CourtsOverview from './facility/CourtsOverview'
 import NotificationSettings from './manage/NotificationSettings'
 import PaymentModes from './manage/PaymentModes'
+import Integrations from './manage/Integrations'
 import StaffManagement from './manage/StaffManagement'
 import Coaches from './manage/Coaches'
 import Users from './manage/Users'
@@ -57,6 +58,7 @@ export type View =
   | 'manageInvoices'
   | 'manageCoupons'
   | 'managePaymentModes'
+  | 'manageIntegrations'
   | 'manageNotifications'
   | 'manageStaff'
 
@@ -195,6 +197,12 @@ function Shell() {
           <>
             <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Payment Modes" icon={storeManagement} />
             <PaymentModes />
+          </>
+        )}
+        {view === 'manageIntegrations' && (
+          <>
+            <Header onMenuClick={() => setSidebarOpen(true)} onNavigate={navigate} title="Integrations" icon={storeManagement} />
+            <Integrations />
           </>
         )}
         {view === 'manageNotifications' && (
