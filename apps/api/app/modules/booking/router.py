@@ -684,6 +684,71 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
     return await _detail(db, booking)
 
 
+@router.get(
+    "/bookings/checkin-lookup",
+    response_model=BookingDetail,
+    summary="Find a booking to check in by its booking id",
+    description=(
+        "For the kiosk's 'Already have a Booking' flow: matches `code` against this "
+        "booking's own id (punctuation-insensitive, since a customer only ever holds "
+        "a shortened piece of the UUID) or a partner's `external_ref` (Playo, Hudle, "
+        "...), matched verbatim since that string is opaque to us.\n\n"
+        "Scoped to bookings starting within 30 minutes either side of now. A 404 "
+        "covers both 'no such id' and 'right id, wrong time' — check-in doesn't "
+        "distinguish them, so a customer can't use it to fish for whether a code is "
+        "valid outside its window."
+    ),
+)
+async def checkin_lookup(db: Db, _: RequireKiosk, code: Annotated[str, Query(min_length=1)]) -> BookingDetail:
+    now = datetime.now(UTC)
+    window_start = now - service.CHECKIN_LOOKUP_WINDOW
+    window_end = now + service.CHECKIN_LOOKUP_WINDOW
+    stmt = select(Booking).where(
+        Booking.status != BookingStatus.CANCELLED,
+        Booking.starts_at >= window_start,
+        Booking.starts_at <= window_end,
+    )
+    candidates = (await db.execute(stmt)).scalars().all()
+    booking = next(
+        (b for b in candidates if service.matches_booking_code(b.id, b.external_ref, code)), None
+    )
+    if booking is None:
+        raise NotFoundError("Booking not found.")
+    return await _detail(db, booking)
+
+
+@router.get(
+    "/bookings/checkout-lookup",
+    response_model=BookingDetail,
+    summary="Find a booking to settle by its booking id",
+    description=(
+        "Same id matching as `GET /bookings/checkin-lookup`, but for settling a "
+        "bill rather than confirming an arrival: matches any not-cancelled booking "
+        "that has already started, up to 12 hours back, with no upper bound — a "
+        "session settled late is still the same session. The most recently "
+        "started match wins if more than one fits."
+    ),
+)
+async def checkout_lookup(db: Db, _: RequireKiosk, code: Annotated[str, Query(min_length=1)]) -> BookingDetail:
+    now = datetime.now(UTC)
+    stmt = (
+        select(Booking)
+        .where(
+            Booking.status != BookingStatus.CANCELLED,
+            Booking.starts_at >= now - service.CHECKOUT_LOOKUP_LOOKBACK,
+            Booking.starts_at <= now,
+        )
+        .order_by(Booking.starts_at.desc())
+    )
+    candidates = (await db.execute(stmt)).scalars().all()
+    booking = next(
+        (b for b in candidates if service.matches_booking_code(b.id, b.external_ref, code)), None
+    )
+    if booking is None:
+        raise NotFoundError("Booking not found.")
+    return await _detail(db, booking)
+
+
 @router.get("/bookings/{booking_id}", response_model=BookingDetail, summary="A single booking")
 async def get_booking(booking_id: uuid.UUID, db: Db, _: RequireKiosk) -> BookingDetail:
     booking = await get_or_404(db, Booking, booking_id, label="Booking")

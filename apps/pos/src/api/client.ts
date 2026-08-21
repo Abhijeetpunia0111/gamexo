@@ -202,6 +202,20 @@ export const api = {
   getBooking: (bookingId: string) =>
     request<Ok<'/api/v1/bookings/{booking_id}', 'get'>>(`/api/v1/bookings/${bookingId}`),
 
+  /** Check-in by booking id — 404s if there's no match, or the match is outside its
+   *  ±30 minute window. `code` can be our own booking id or a partner's reference. */
+  checkinLookup: (code: string) =>
+    request<Ok<'/api/v1/bookings/checkin-lookup', 'get'>>('/api/v1/bookings/checkin-lookup', {
+      query: { code },
+    }),
+
+  /** Same id matching as checkinLookup, but for settling a bill — any started,
+   *  not-cancelled booking from the last 12 hours, no upper time bound. */
+  checkoutLookup: (code: string) =>
+    request<Ok<'/api/v1/bookings/checkout-lookup', 'get'>>('/api/v1/bookings/checkout-lookup', {
+      query: { code },
+    }),
+
   /** Prices a booking without creating it — used for the live invoice preview. */
   quoteBooking: (body: {
     court_id: string

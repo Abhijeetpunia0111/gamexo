@@ -1,23 +1,23 @@
 import { useEffect, useState } from 'react'
 import { TopBar } from '../ui/TopBar'
 import { CheckinFooter } from '../checkin/Chrome'
+import EnterBookingId from '../checkin/steps/EnterBookingId'
 import { useRecordPayment, useInvoiceBooking, type InvoiceOut } from '../api/hooks'
-import EnterNumber from './steps/EnterNumber'
 import SessionResult from './steps/SessionResult'
 import PaymentMethod from './steps/PaymentMethod'
 import UpiQr from './steps/UpiQr'
 import AdminOtp from './steps/AdminOtp'
 import Settled from './steps/Settled'
-import { useActiveSessionByPhone, type CheckoutBooking } from './useCheckout'
+import { useActiveSessionByCode, type CheckoutBooking } from './useCheckout'
 
-type Step = 'phone' | 'session' | 'payment' | 'upi-qr' | 'admin-otp' | 'settled'
+type Step = 'code' | 'session' | 'payment' | 'upi-qr' | 'admin-otp' | 'settled'
 type Method = 'upi' | 'cash'
 
 const RESEND_SECONDS = 30
 const generateOtp = () => String(Math.floor(10000 + Math.random() * 90000))
 
 const TITLES: Partial<Record<Step, string>> = {
-  phone: 'Checkout',
+  code: 'Checkout',
   session: 'Checkout',
   payment: 'Checkout',
   'upi-qr': 'Checkout',
@@ -25,7 +25,7 @@ const TITLES: Partial<Record<Step, string>> = {
 }
 
 const STEP_INDEX: Partial<Record<Step, number>> = {
-  phone: 1,
+  code: 1,
   session: 2,
   payment: 3,
   'upi-qr': 4,
@@ -34,9 +34,9 @@ const STEP_INDEX: Partial<Record<Step, number>> = {
 }
 
 export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
-  const [step, setStep] = useState<Step>('phone')
-  const [phone, setPhone] = useState('')
-  const [searchPhone, setSearchPhone] = useState<string | null>(null)
+  const [step, setStep] = useState<Step>('code')
+  const [code, setCode] = useState('')
+  const [searchCode, setSearchCode] = useState<string | null>(null)
   const [method, setMethod] = useState<Method | null>(null)
   const [otp, setOtp] = useState('')
   const [otpCode, setOtpCode] = useState(generateOtp)
@@ -47,7 +47,7 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
   const [invoice, setInvoice] = useState<InvoiceOut | undefined>(undefined)
   const [settleError, setSettleError] = useState<string | null>(null)
 
-  const sessionQuery = useActiveSessionByPhone(searchPhone)
+  const sessionQuery = useActiveSessionByCode(searchCode)
   const recordPayment = useRecordPayment()
   const invoiceBooking = useInvoiceBooking()
 
@@ -58,7 +58,7 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
   }, [step, resendCooldown])
 
   const findSession = () => {
-    setSearchPhone(phone)
+    setSearchCode(code)
     setStep('session')
   }
 
@@ -122,9 +122,9 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
   }
 
   const restart = () => {
-    setStep('phone')
-    setPhone('')
-    setSearchPhone(null)
+    setStep('code')
+    setCode('')
+    setSearchCode(null)
     setMethod(null)
     setOtp('')
     setOtpError(null)
@@ -136,8 +136,8 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
   const resultStatus = sessionQuery.isPending ? 'loading' : sessionQuery.data ? 'found' : 'not-found'
 
   const backHandlers: Record<Step, () => void> = {
-    phone: onHome,
-    session: () => setStep('phone'),
+    code: onHome,
+    session: () => setStep('code'),
     payment: () => setStep('session'),
     'upi-qr': () => setStep('payment'),
     'admin-otp': () => setStep(method === 'upi' ? 'upi-qr' : 'payment'),
@@ -149,14 +149,16 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
       <TopBar centerTitle={TITLES[step]} onLogoClick={onHome} />
 
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-8 overflow-y-auto px-4 py-[clamp(1.5rem,4vh,3rem)]">
-        {step === 'phone' && <EnterNumber phone={phone} setPhone={setPhone} onSubmit={findSession} />}
+        {step === 'code' && (
+          <EnterBookingId code={code} setCode={setCode} onSubmit={findSession} submitLabel="Find Booking" />
+        )}
 
         {step === 'session' && (
           <SessionResult
             status={resultStatus}
             booking={booking}
             onSettle={() => setStep('payment')}
-            onRetry={() => setStep('phone')}
+            onRetry={() => setStep('code')}
             onHome={onHome}
           />
         )}

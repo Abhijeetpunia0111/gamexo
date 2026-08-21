@@ -1202,3 +1202,135 @@ async def test_an_online_booking_is_never_auto_checked_in(
     )
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "upcoming"
+
+
+# ── Check-in by booking id ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "booking_id, external_ref, code, expected",
+    [
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", None, "567890", True),
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", None, "5-67 890", True),
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", None, "aBcDeF", True),
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", None, "999999", False),
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", None, "890", False),  # under the 4-char floor
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "PLYO-998877", "PLYO-998877", True),
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "PLYO-998877", "plyo-998877", True),
+        # No hyphen key on the kiosk keyboard — a customer can only ever type this.
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "PLYO-998877", "PLYO998877", True),
+        ("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "PLYO-998877", "998877", False),
+    ],
+)
+def test_matches_booking_code(booking_id, external_ref, code, expected) -> None:
+    import uuid as uuid_mod
+
+    assert service.matches_booking_code(uuid_mod.UUID(booking_id), external_ref, code) is expected
+
+
+async def test_checkin_lookup_finds_a_booking_by_a_shortened_id_within_the_window(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) + timedelta(minutes=10)).replace(microsecond=0).isoformat()
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    booking_id = created.json()["id"]
+    code = booking_id.split("-")[-1][-6:].upper()
+
+    found = await client.get(
+        "/api/v1/bookings/checkin-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert found.status_code == 200, found.text
+    assert found.json()["id"] == booking_id
+
+
+async def test_checkin_lookup_404s_outside_the_thirty_minute_window(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """Right id, wrong time — the customer walked in far too early or far too late."""
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) + timedelta(minutes=45)).replace(microsecond=0).isoformat()
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    code = created.json()["id"].split("-")[-1][-6:].upper()
+
+    missed = await client.get(
+        "/api/v1/bookings/checkin-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert missed.status_code == 404, missed.text
+
+
+async def test_checkin_lookup_404s_for_a_cancelled_booking(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) + timedelta(minutes=5)).replace(microsecond=0).isoformat()
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    booking_id = created.json()["id"]
+    code = booking_id.split("-")[-1][-6:].upper()
+
+    cancelled = await client.post(
+        f"/api/v1/bookings/{booking_id}/cancel", json={}, headers=ctx["headers"]
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    missed = await client.get(
+        "/api/v1/bookings/checkin-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert missed.status_code == 404, missed.text
+
+
+async def test_checkout_lookup_finds_a_session_well_outside_the_checkin_window(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """A session running long is exactly what check-in's 30-minute window would
+    reject, and exactly what checkout has to still find to settle the bill."""
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) - timedelta(hours=2)).replace(microsecond=0).isoformat()
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    booking_id = created.json()["id"]
+    code = booking_id.split("-")[-1][-6:].upper()
+
+    missed_checkin = await client.get(
+        "/api/v1/bookings/checkin-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert missed_checkin.status_code == 404, missed_checkin.text
+
+    found = await client.get(
+        "/api/v1/bookings/checkout-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert found.status_code == 200, found.text
+    assert found.json()["id"] == booking_id
+
+
+async def test_checkout_lookup_404s_beyond_the_lookback_window(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) - timedelta(hours=13)).replace(microsecond=0).isoformat()
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    code = created.json()["id"].split("-")[-1][-6:].upper()
+
+    missed = await client.get(
+        "/api/v1/bookings/checkout-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert missed.status_code == 404, missed.text
+
+
+async def test_checkout_lookup_404s_for_a_booking_that_has_not_started_yet(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    ctx = await setup_academy(client, tenant_a)
+    starts = (datetime.now(UTC) + timedelta(minutes=10)).replace(microsecond=0).isoformat()
+    created = await book(client, ctx, court=ctx["court_1"], starts_at=starts, minutes=60)
+    assert created.status_code == 201, created.text
+    code = created.json()["id"].split("-")[-1][-6:].upper()
+
+    missed = await client.get(
+        "/api/v1/bookings/checkout-lookup", params={"code": code}, headers=ctx["headers"]
+    )
+    assert missed.status_code == 404, missed.text

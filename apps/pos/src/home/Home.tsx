@@ -24,7 +24,7 @@ function Tile({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-[296px] shrink-0 flex-col items-center gap-[clamp(1rem,2vw,1.375rem)] rounded-2xl bg-surface px-4 pb-[clamp(1.5rem,3vw,2rem)] pt-3.5 transition-transform hover:-translate-y-1 min-[650px]:w-full min-[650px]:max-w-[296px] min-[650px]:flex-1 min-[650px]:shrink"
+      className="flex w-[238px] shrink-0 flex-col items-center gap-[clamp(1rem,2vw,1.375rem)] rounded-2xl bg-surface px-4 pb-[clamp(1.5rem,3vw,2rem)] pt-3.5 transition-transform hover:-translate-y-1 min-[850px]:w-full min-[850px]:max-w-[296px] min-[850px]:flex-1 min-[850px]:shrink"
     >
       <div className="h-[clamp(11rem,20vw,17.3125rem)] w-full">
         <img src={image} alt="" className="size-full object-contain" />
@@ -73,7 +73,7 @@ export default function Home({ onNavigate }: { onNavigate: (view: View) => void 
         }
       />
 
-      <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-[clamp(1.75rem,4vh,3.125rem)] overflow-y-auto px-10 py-10">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-[clamp(1.75rem,4vh,3.125rem)] overflow-y-auto px-8 py-10">
         <div className="flex flex-col items-center gap-1 text-center">
           <p className="font-display text-[clamp(1.5rem,3vw,2.25rem)] font-bold text-ink">Welcome to Xcourt</p>
           <p className="text-[clamp(0.9375rem,1.2vw,1rem)] font-medium text-muted">
@@ -81,7 +81,7 @@ export default function Home({ onNavigate }: { onNavigate: (view: View) => void 
           </p>
         </div>
 
-        <div className="flex w-full max-w-[960px] flex-row items-stretch justify-start gap-5 overflow-x-auto px-1 pb-2 min-[650px]:justify-center min-[650px]:overflow-visible min-[650px]:px-0 min-[650px]:pb-0">
+        <div className="flex w-full max-w-[100%] flex-row items-stretch justify-start gap-5 overflow-x-auto px-1 pb-2 min-[850px]:justify-center min-[850px]:overflow-visible min-[850px]:px-0 min-[850px]:pb-0">
           <Tile
             image={checkinIllustration}
             title="Check In"

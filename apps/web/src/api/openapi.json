@@ -13782,6 +13782,104 @@
         ]
       }
     },
+    "/api/v1/bookings/checkin-lookup": {
+      "get": {
+        "description": "For the kiosk's 'Already have a Booking' flow: matches `code` against this booking's own id (punctuation-insensitive, since a customer only ever holds a shortened piece of the UUID) or a partner's `external_ref` (Playo, Hudle, ...), matched verbatim since that string is opaque to us.\n\nScoped to bookings starting within 30 minutes either side of now. A 404 covers both 'no such id' and 'right id, wrong time' \u2014 check-in doesn't distinguish them, so a customer can't use it to fish for whether a code is valid outside its window.",
+        "operationId": "booking_checkinLookup",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Find a booking to check in by its booking id",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/checkout-lookup": {
+      "get": {
+        "description": "Same id matching as `GET /bookings/checkin-lookup`, but for settling a bill rather than confirming an arrival: matches any not-cancelled booking that has already started, up to 12 hours back, with no upper bound \u2014 a session settled late is still the same session. The most recently started match wins if more than one fits.",
+        "operationId": "booking_checkoutLookup",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Find a booking to settle by its booking id",
+        "tags": [
+          "booking"
+        ]
+      }
+    },
     "/api/v1/bookings/quote": {
       "post": {
         "description": "Backs the walk-in wizard's live summary, so the quote and the booking agree.",

@@ -329,6 +329,42 @@ def _apply_quote(booking: Booking, quote: Quote, lines: Sequence[EquipmentLine])
 AUTO_CHECKIN_LEAD = timedelta(minutes=15)
 
 
+CHECKIN_LOOKUP_WINDOW = timedelta(minutes=30)
+
+# How far back a checkout lookup will still search for a session to settle. Not
+# unbounded: a booking id typed at the counter for checkout is always today's
+# session, and a query with no floor would scan the tenant's entire booking
+# history — every session it has ever run — on every single checkout.
+CHECKOUT_LOOKUP_LOOKBACK = timedelta(hours=12)
+
+
+def matches_booking_code(booking_id: uuid.UUID, external_ref: str | None, code: str) -> bool:
+    """Does `code`, typed on the check-in keyboard, identify this booking?
+
+    There is no single booking-id format: our own bookings are UUIDs, a customer
+    only ever holds a shortened piece of one, and a Playo or Hudle booking carries
+    whatever reference that platform hands out. Punctuation is stripped from both
+    sides before comparing either way — not just for case-insensitivity, but
+    because the kiosk's on-screen keyboard has no hyphen key, so a customer reading
+    "PLYO-998877" off their phone can only ever type "PLYO998877" here.
+
+    A partner reference must match in full once compacted (an equality check, not
+    a substring one — `external_ref` is opaque to us, so a partial hit proves
+    nothing). Our own booking id matches on any long-enough compacted substring,
+    since the code on a ticket is deliberately only a piece of the full UUID.
+    """
+    compact = re.sub(r"[^0-9a-zA-Z]", "", code).upper()
+    if not compact:
+        return False
+    if external_ref:
+        ref_compact = re.sub(r"[^0-9a-zA-Z]", "", external_ref).upper()
+        if ref_compact and ref_compact == compact:
+            return True
+    if len(compact) < 4:
+        return False
+    return compact in str(booking_id).replace("-", "").upper()
+
+
 def should_auto_check_in(
     *,
     booking_type: BookingType,

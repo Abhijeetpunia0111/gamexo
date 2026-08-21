@@ -481,6 +481,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bookings/checkin-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find a booking to check in by its booking id
+         * @description For the kiosk's 'Already have a Booking' flow: matches `code` against this booking's own id (punctuation-insensitive, since a customer only ever holds a shortened piece of the UUID) or a partner's `external_ref` (Playo, Hudle, ...), matched verbatim since that string is opaque to us.
+         *
+         *     Scoped to bookings starting within 30 minutes either side of now. A 404 covers both 'no such id' and 'right id, wrong time' — check-in doesn't distinguish them, so a customer can't use it to fish for whether a code is valid outside its window.
+         */
+        get: operations["booking_checkinLookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/checkout-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find a booking to settle by its booking id
+         * @description Same id matching as `GET /bookings/checkin-lookup`, but for settling a bill rather than confirming an arrival: matches any not-cancelled booking that has already started, up to 12 hours back, with no upper bound — a session settled late is still the same session. The most recently started match wins if more than one fits.
+         */
+        get: operations["booking_checkoutLookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bookings/quote": {
         parameters: {
             query?: never;
@@ -6769,6 +6811,68 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    booking_checkinLookup: {
+        parameters: {
+            query: {
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    booking_checkoutLookup: {
+        parameters: {
+            query: {
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

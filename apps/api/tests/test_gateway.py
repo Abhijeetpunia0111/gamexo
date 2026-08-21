@@ -421,3 +421,25 @@ async def test_an_integration_with_bookings_cannot_be_deleted(
 
     refused = await client.delete(f"/api/v1/partners/{playo['id']}", headers=ctx["headers"])
     assert refused.status_code == 409
+
+
+async def test_checkin_lookup_matches_a_partners_external_ref(
+    client: AsyncClient, tenant_a: TenantFixture
+) -> None:
+    """The counter's check-in screen has to accept Playo's own booking reference,
+    not just an id we minted — that reference is what the customer actually holds."""
+    ctx = await setup_academy(client, tenant_a)
+    playo = await make_partner(client, ctx, tenant_a, "Playo", "playo")
+    starts = (datetime.now(UTC) + timedelta(minutes=5)).replace(microsecond=0).isoformat()
+    made = await partner_book(
+        client, playo, court=ctx["court_1"], starts_at=starts, external_ref="PLYO-998877"
+    )
+    assert made.status_code == 201, made.text
+
+    found = await client.get(
+        "/api/v1/bookings/checkin-lookup",
+        params={"code": "plyo-998877"},
+        headers=ctx["headers"],
+    )
+    assert found.status_code == 200, found.text
+    assert found.json()["id"] == made.json()["id"]

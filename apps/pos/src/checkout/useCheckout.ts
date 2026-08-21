@@ -1,29 +1,26 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import QRCode from 'qrcode'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import type { components } from '../api/schema'
 
 export type CheckoutBooking = components['schemas']['BookingDetail']
 
-/** Finds the walk-in's current session by phone for the settle-bill flow. Goes by the
- *  actual clock rather than the `status` enum — nothing here flips a booking from
- *  "upcoming" to "active"/"completed" as its slot passes, so a booking whose start time
- *  has already come is "checked in" regardless of what its stored status still says. */
-export function useActiveSessionByPhone(phone: string | null) {
+/** Finds the session to settle by booking id. Unlike check-in's lookup, this has no
+ *  upper time bound — a session running long is exactly the case checkout still has
+ *  to find — which is why it's a separate backend endpoint from check-in's. */
+export function useActiveSessionByCode(code: string | null) {
   return useQuery({
-    queryKey: ['checkout-active-session', phone],
+    queryKey: ['checkout-active-session', code],
     queryFn: async () => {
-      const res = await api.listBookings({ search: phone!, size: 15 })
-      const now = Date.now()
-      const live = (res.items ?? []).filter(
-        (b) => b.status !== 'cancelled' && new Date(b.starts_at).getTime() <= now,
-      )
-      if (live.length === 0) return null
-      live.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
-      return api.getBooking(live[0].id)
+      try {
+        return await api.checkoutLookup(code!.trim())
+      } catch (err) {
+        if (err instanceof ApiError && err.isNotFound) return null
+        throw err
+      }
     },
-    enabled: !!phone,
+    enabled: !!code,
     retry: false,
     staleTime: 0,
   })
