@@ -473,7 +473,14 @@ async def list_bookings(
         stmt = stmt.where(Booking.starts_at < date_to)
     if search:
         like = f"%{search.lower()}%"
-        stmt = stmt.where(Booking.customer_name.ilike(like) | Booking.customer_phone.ilike(like))
+        # Reference included so one search box answers all three ways a booking gets
+        # asked about at the desk: "it's under Priya", the phone they booked with,
+        # or the code off their ticket.
+        stmt = stmt.where(
+            Booking.customer_name.ilike(like)
+            | Booking.customer_phone.ilike(like)
+            | Booking.reference.ilike(like)
+        )
     return await paginate(db, stmt, params, BookingOut)
 
 
@@ -613,6 +620,10 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
     )
 
     booking = Booking(
+        # Allocated before the slot check on purpose. The counter row is locked for
+        # the rest of this transaction, so a conflicting slot rolls the number back
+        # with everything else and the series stays gapless.
+        reference=await service.next_booking_reference(db),
         customer_id=customer_id,
         customer_name=name,
         customer_phone=phone,

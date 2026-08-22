@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import QRCode from 'qrcode'
 import { api, ApiError } from '../api/client'
 import type { components } from '../api/schema'

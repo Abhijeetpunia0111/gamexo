@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Check, Download, Mail, MessageCircle, RotateCcw } from 'lucide-react'
-import { invoiceSummaryText, shortId, type InvoiceData } from '../invoice'
+import { invoiceSummaryText, type InvoiceData } from '../invoice'
 import { downloadInvoicePdf } from '../../lib/invoicePdf'
 import { shareOnWhatsApp } from '../../lib/share'
 import { useEmailInvoice } from '../../api/hooks'
@@ -67,7 +67,7 @@ export default function Confirmation({
         </p>
         {invoice.bookingId && (
           <span className="mt-1 rounded-full bg-ink px-3.5 py-1 font-mono text-xs font-semibold text-white">
-            {invoice.invoiceNo ?? shortId(invoice.bookingId)}
+            {invoice.invoiceNo ?? invoice.bookingRef}
           </span>
         )}
       </div>

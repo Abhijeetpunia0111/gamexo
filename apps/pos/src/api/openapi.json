@@ -2130,6 +2130,10 @@
           "payment_status": {
             "$ref": "#/components/schemas/PaymentStatus"
           },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
           "source_platform": {
             "anyOf": [
               {
@@ -2178,6 +2182,7 @@
         },
         "required": [
           "id",
+          "reference",
           "customer_id",
           "customer_name",
           "customer_phone",
@@ -2418,6 +2423,10 @@
           "payment_status": {
             "$ref": "#/components/schemas/PaymentStatus"
           },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
           "source_platform": {
             "anyOf": [
               {
@@ -2455,6 +2464,7 @@
         },
         "required": [
           "id",
+          "reference",
           "customer_id",
           "customer_name",
           "customer_phone",
@@ -7546,6 +7556,10 @@
             "title": "Payment Status",
             "type": "string"
           },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
           "source_platform": {
             "anyOf": [
               {
@@ -7579,6 +7593,7 @@
         },
         "required": [
           "id",
+          "reference",
           "external_ref",
           "source_platform",
           "court_id",

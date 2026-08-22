@@ -26,7 +26,7 @@ function Found({
         >
           <div className="flex flex-col gap-1">
             <p className="text-[clamp(0.75rem,0.9vw,0.8125rem)] font-medium text-muted">
-              #BK-{booking.id.slice(0, 8).toUpperCase()}
+              {booking.reference}
             </p>
             <p className="font-display text-[clamp(1.25rem,2vw,1.5rem)] font-bold text-ink">{booking.customer_name}</p>
           </div>

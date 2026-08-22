@@ -2468,6 +2468,8 @@ export interface components {
             /** Payment Method */
             payment_method: string | null;
             payment_status: components["schemas"]["PaymentStatus"];
+            /** Reference */
+            reference: string;
             /** Source Platform */
             source_platform?: string | null;
             /**
@@ -2583,6 +2585,8 @@ export interface components {
             /** Payment Method */
             payment_method: string | null;
             payment_status: components["schemas"]["PaymentStatus"];
+            /** Reference */
+            reference: string;
             /** Source Platform */
             source_platform?: string | null;
             /**
@@ -4312,6 +4316,8 @@ export interface components {
             id: string;
             /** Payment Status */
             payment_status: string;
+            /** Reference */
+            reference: string;
             /** Source Platform */
             source_platform: string | null;
             /**

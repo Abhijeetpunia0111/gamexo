@@ -43,8 +43,6 @@ export default function CheckInFlow({
     setSubmittedCode(null)
   }
 
-  const resultStatus = bookingQuery.isPending ? 'loading' : bookingQuery.data ? 'found' : 'not-found'
-
   const backHandlers: Record<Step, () => void> = {
     method: onHome,
     code: () => setStep('method'),
@@ -62,8 +60,8 @@ export default function CheckInFlow({
 
         {step === 'result' && (
           <CheckInResult
-            status={resultStatus}
-            booking={bookingQuery.data}
+            status={booking ? 'found' : 'not-found'}
+            booking={booking ?? undefined}
             onRentEquipment={onStore}
             onHome={onHome}
             onRetry={goCode}

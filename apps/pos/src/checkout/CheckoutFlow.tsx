@@ -84,7 +84,6 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
     setResendCooldown(RESEND_SECONDS)
   }
 
-  const booking = sessionQuery.data
   const amount = booking ? Number(booking.balance_due) : 0
   const alreadySettled = step === 'session' && !!booking && amount <= 0
 
@@ -133,7 +132,11 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
     setInvoice(undefined)
   }
 
-  const resultStatus = sessionQuery.isPending ? 'loading' : sessionQuery.data ? 'found' : 'not-found'
+  const resultStatus = findSessionMutation.isPending
+    ? 'loading'
+    : booking && !lookupFailed
+      ? 'found'
+      : 'not-found'
 
   const backHandlers: Record<Step, () => void> = {
     code: onHome,
@@ -156,7 +159,7 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
         {step === 'session' && (
           <SessionResult
             status={resultStatus}
-            booking={booking}
+            booking={booking ?? undefined}
             onSettle={() => setStep('payment')}
             onRetry={() => setStep('code')}
             onHome={onHome}
@@ -166,7 +169,7 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
         {step === 'payment' && <PaymentMethod amount={amount} onSelect={chooseMethod} />}
 
         {step === 'upi-qr' && booking && (
-          <UpiQr amount={amount} reference={`BK-${booking.id.slice(0, 8).toUpperCase()}`} onVerify={startAuthorization} />
+          <UpiQr amount={amount} reference={booking.reference} onVerify={startAuthorization} />
         )}
 
         {step === 'admin-otp' && (

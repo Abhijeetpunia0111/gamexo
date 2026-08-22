@@ -3,7 +3,7 @@ import { useCourts, useQuote, useSports } from '../../api/hooks'
 import { money, startsAtISO } from '../../lib/format'
 import { downloadInvoicePdf } from '../../lib/invoicePdf'
 import type { PaymentMethodId } from '../../lib/paymentMethods'
-import { buildProvisionalInvoice, shortId } from '../invoice'
+import { buildProvisionalInvoice } from '../invoice'
 import { traySelections } from '../offers'
 import type { Draft } from '../types'
 import arrowRight from '../../assets/figma/checkin/arrow-right-check.svg'
@@ -71,7 +71,7 @@ export default function PaymentStep({
               <div className="flex items-center gap-1 text-[clamp(0.5625rem,1.04vh,0.625rem)]">
                 {invoice.bookingId ? (
                   <>
-                    <span className="text-muted">Booking {shortId(invoice.bookingId)} ·</span>
+                    <span className="text-muted">Booking {invoice.bookingRef} ·</span>
                     <span className="font-semibold text-flame">{invoice.balanceDue > 0 ? 'Due' : 'Paid'}</span>
                   </>
                 ) : (

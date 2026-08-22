@@ -185,6 +185,10 @@ async def create_booking(
     )
 
     booking = Booking(
+        # A booking sold on Playo still gets our reference, and the partner gets it
+        # back in the response — it is what the customer will be asked for at the
+        # counter, so the platform has to be able to put it on their confirmation.
+        reference=await service.next_booking_reference(db),
         customer_id=customer_id,
         customer_name=name,
         customer_phone=phone,
