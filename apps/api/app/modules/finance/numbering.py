@@ -25,6 +25,7 @@ PAD: dict[CounterKind, int] = {
     CounterKind.MEMBER: 4,
     CounterKind.COACH: 3,
     CounterKind.STUDENT: 3,
+    CounterKind.BOOKING: 4,
 }
 
 INFIX: dict[CounterKind, str] = {
@@ -32,11 +33,17 @@ INFIX: dict[CounterKind, str] = {
     CounterKind.MEMBER: "M",
     CounterKind.COACH: "C",
     CounterKind.STUDENT: "S",
+    CounterKind.BOOKING: "B",
 }
 
 
 def period_for(kind: CounterKind, on: date) -> str:
-    """Invoices reset annually; the other series run forever."""
+    """Invoices reset annually; the other series run forever.
+
+    Bookings deliberately do not reset. A reference has to stay unambiguous for as
+    long as anyone might quote it — a customer arriving with a January ticket in
+    January of the following year must not be handed someone else's court.
+    """
     return str(on.year) if kind is CounterKind.INVOICE else ""
 
 

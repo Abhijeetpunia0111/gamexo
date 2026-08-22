@@ -473,7 +473,14 @@ async def list_bookings(
         stmt = stmt.where(Booking.starts_at < date_to)
     if search:
         like = f"%{search.lower()}%"
-        stmt = stmt.where(Booking.customer_name.ilike(like) | Booking.customer_phone.ilike(like))
+        # Reference included so one search box answers all three ways a booking gets
+        # asked about at the desk: "it's under Priya", the phone they booked with,
+        # or the code off their ticket.
+        stmt = stmt.where(
+            Booking.customer_name.ilike(like)
+            | Booking.customer_phone.ilike(like)
+            | Booking.reference.ilike(like)
+        )
     return await paginate(db, stmt, params, BookingOut)
 
 
@@ -613,6 +620,10 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
     )
 
     booking = Booking(
+        # Allocated before the slot check on purpose. The counter row is locked for
+        # the rest of this transaction, so a conflicting slot rolls the number back
+        # with everything else and the series stays gapless.
+        reference=await service.next_booking_reference(db),
         customer_id=customer_id,
         customer_name=name,
         customer_phone=phone,
@@ -681,6 +692,35 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
 
     await db.flush()
     await _queue_booking_confirmation(db, booking)
+    return await _detail(db, booking)
+
+
+@router.get(
+    "/bookings/lookup",
+    response_model=BookingDetail,
+    summary="Find a booking by the reference a customer quotes",
+    description=(
+        "Backs check-in at the kiosk, where someone types the code from their ticket "
+        "on a touchscreen.\n\n"
+        "The input is normalised before matching, so `XC-B-0042`, `xc b 0042`, "
+        "`B-42` and `42` all resolve to the same booking — the tenant is already "
+        "fixed by the host, so the short forms are unambiguous. Anything that cannot "
+        "be a reference at all (a phone number typed out of habit, a name) is a "
+        "**404** rather than a validation error: from the screen's point of view "
+        "both mean the same thing, and 'no booking found' is the useful message.\n\n"
+        "Declared above `/bookings/{booking_id}` deliberately — routes match in "
+        "order, and `lookup` would otherwise be parsed as a malformed UUID."
+    ),
+    responses={404: {"description": "No booking with that reference."}},
+)
+async def lookup_booking(
+    db: Db,
+    _: RequireKiosk,
+    reference: Annotated[str, Query(description="As printed on the ticket, e.g. XC-B-0042")],
+) -> BookingDetail:
+    booking = await service.find_by_reference(db, reference)
+    if booking is None:
+        raise NotFoundError("No booking found with that reference.")
     return await _detail(db, booking)
 
 

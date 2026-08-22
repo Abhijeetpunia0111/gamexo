@@ -129,6 +129,7 @@ export function toBooking(b: BookingOut): Booking {
 
   return {
     id: b.id,
+    reference: b.reference,
     sportId: b.sport_id,
     courtId: b.court_id,
     date,

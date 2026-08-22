@@ -52,6 +52,73 @@ async def load_settings(session: AsyncSession) -> TenantSettings:
     return settings
 
 
+# ── Booking references ──────────────────────────────────────────────────────
+#
+# `XC-B-0042`. The academy's own prefix, the booking series, then the counter.
+
+#: Any leading letters, then the digits that carry the meaning. The letters are
+#: matched but discarded: on a kiosk the tenant is already fixed by the hostname,
+#: so "XCB42", "B-42" and "42" can only mean one booking, and refusing the short
+#: forms would make someone key a prefix they can see printed above the screen.
+_REFERENCE_INPUT = re.compile(r"^[A-Z]*B?[^0-9]*([0-9]+)$")
+
+
+async def next_booking_reference(session: AsyncSession) -> str:
+    """Allocate the next reference for this academy.
+
+    Deferred import: finance imports booking models, so pulling numbering in at
+    module scope closes the cycle.
+    """
+    from app.modules.finance.models import CounterKind
+    from app.modules.finance.numbering import next_number
+
+    settings = await load_settings(session)
+    return await next_number(session, CounterKind.BOOKING, prefix=settings.invoice_prefix)
+
+
+def normalise_reference(raw: str, *, prefix: str) -> str | None:
+    """Turn whatever was typed into the stored form, or None if it cannot be one.
+
+    Forgiving on purpose. This value is keyed one character at a time on a
+    touchscreen by someone who has just arrived, reading a phone screen or a
+    printed ticket, so every one of these resolves to `XC-B-0042`:
+
+        XC-B-0042   xc b 0042   XCB0042   B-42   0042   42
+
+    What it will not do is guess. A string with no digits, or one that is all
+    digits and too long to be a counter value, returns None rather than being
+    coerced into a lookup that would fail confusingly further down — a 10-digit
+    phone number typed out of habit is the case that matters.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", raw or "").upper()
+    match = _REFERENCE_INPUT.match(cleaned)
+    if match is None:
+        return None
+
+    digits = match.group(1)
+    # Eight digits is 99,999,999 bookings for one academy. Anything longer is not a
+    # reference someone mistyped, it is a phone number or a card number.
+    if len(digits) > 8:
+        return None
+
+    return f"{prefix}-B-{int(digits):04d}"
+
+
+async def find_by_reference(session: AsyncSession, raw: str) -> Booking | None:
+    """Resolve a typed reference to exactly one booking, or nothing.
+
+    Tenant-scoped by the session, so a reference from another academy cannot be
+    reached even though the counter guarantees the same string exists there.
+    """
+    settings = await load_settings(session)
+    reference = normalise_reference(raw, prefix=settings.invoice_prefix)
+    if reference is None:
+        return None
+
+    result = await session.execute(select(Booking).where(Booking.reference == reference))
+    return result.scalar_one_or_none()
+
+
 async def resolve_equipment_lines(
     session: AsyncSession, selections: Iterable[EquipmentSelection]
 ) -> tuple[list[EquipmentLine], dict[uuid.UUID, Equipment]]:

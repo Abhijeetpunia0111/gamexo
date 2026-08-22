@@ -1,25 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { TopBar } from '../ui/TopBar'
 import { CheckinFooter } from './Chrome'
 import ChooseMethod from './steps/ChooseMethod'
-import EnterNumber from './steps/EnterNumber'
-import VerifyOtp from './steps/VerifyOtp'
+import EnterBookingId from './steps/EnterBookingId'
 import CheckInResult from './steps/CheckInResult'
-import { useFindBookingByPhone } from './useCheckIn'
-import { DEFAULT_COUNTRY } from './countries'
+import { lookupErrorMessage, useLookupBooking, type CheckinBooking } from './useCheckIn'
 
-type Step = 'method' | 'phone' | 'otp' | 'result'
-
-const RESEND_SECONDS = 30
-const generateOtp = () => String(Math.floor(10000 + Math.random() * 90000))
+/**
+ * Check in against the reference on the customer's ticket.
+ *
+ * Was: phone number → OTP → search every booking for that number → rank the matches
+ * to guess which one they meant. Four screens and an SMS to identify something the
+ * customer was already holding. Now the Booking ID identifies exactly one booking,
+ * so there is nothing to disambiguate and nothing to wait for.
+ *
+ * The OTP is gone with it. It verified the phone, not the booking, and the code was
+ * never sent anywhere — it was a string compare against a number printed on screen.
+ * Knowing a reference that was mailed privately is the proof, and the worst case is
+ * someone checking in to a court they did not pay for, which the desk sees.
+ */
+type Step = 'method' | 'reference' | 'result'
 
 const TITLES: Partial<Record<Step, string>> = {
   method: 'Check In',
-  phone: 'Confirm Check In',
-  otp: 'Confirm Check In',
+  reference: 'Confirm Check In',
 }
 
-const STEP_INDEX: Partial<Record<Step, number>> = { phone: 1, otp: 2, result: 3 }
+const STEP_INDEX: Partial<Record<Step, number>> = { reference: 1, result: 2 }
 
 export default function CheckInFlow({
   onHome,
@@ -31,75 +38,39 @@ export default function CheckInFlow({
   onStore: () => void
 }) {
   const [step, setStep] = useState<Step>('method')
-  const [phone, setPhone] = useState('')
-  const [country, setCountry] = useState(DEFAULT_COUNTRY)
-  const [otp, setOtp] = useState('')
-  const [otpCode, setOtpCode] = useState(generateOtp)
-  const [otpError, setOtpError] = useState<string | null>(null)
-  const [verifying, setVerifying] = useState(false)
-  const [resendCooldown, setResendCooldown] = useState(0)
-  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null)
+  const [bookingId, setBookingId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [booking, setBooking] = useState<CheckinBooking | null>(null)
 
-  const bookingQuery = useFindBookingByPhone(verifiedPhone)
+  const lookup = useLookupBooking()
 
-  useEffect(() => {
-    if (step !== 'otp' || resendCooldown <= 0) return
-    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000)
-    return () => clearTimeout(t)
-  }, [step, resendCooldown])
-
-  const goPhone = () => {
-    setOtpError(null)
-    setStep('phone')
+  const goEnter = () => {
+    setError(null)
+    setStep('reference')
   }
 
-  const sendOtp = () => {
-    setOtpCode(generateOtp())
-    setOtp('')
-    setOtpError(null)
-    setResendCooldown(RESEND_SECONDS)
-    setStep('otp')
-  }
-
-  const resendOtp = () => {
-    if (resendCooldown > 0) return
-    setOtpCode(generateOtp())
-    setOtp('')
-    setOtpError(null)
-    setResendCooldown(RESEND_SECONDS)
-  }
-
-  const verifyOtp = () => {
-    setVerifying(true)
-    setOtpError(null)
-    // Mimics a real verify round-trip — there's no SMS backend behind this yet, so the
-    // check itself is just a string compare against the code shown in the dev hint.
-    setTimeout(() => {
-      setVerifying(false)
-      if (otp === otpCode) {
-        setVerifiedPhone(phone)
-        setStep('result')
-      } else {
-        setOtpError('That code doesn’t match — try again.')
-        setOtp('')
-      }
-    }, 500)
+  const find = async () => {
+    setError(null)
+    try {
+      setBooking(await lookup.mutateAsync(bookingId))
+      setStep('result')
+    } catch (err) {
+      // Stays on this step with the field intact. A wrong code is usually one wrong
+      // character, and clearing the box would make them key the whole thing again.
+      setError(lookupErrorMessage(err))
+    }
   }
 
   const restart = () => {
     setStep('method')
-    setPhone('')
-    setOtp('')
-    setOtpError(null)
-    setVerifiedPhone(null)
+    setBookingId('')
+    setError(null)
+    setBooking(null)
   }
-
-  const resultStatus = bookingQuery.isPending ? 'loading' : bookingQuery.data ? 'found' : 'not-found'
 
   const backHandlers: Record<Step, () => void> = {
     method: onHome,
-    phone: () => setStep('method'),
-    otp: goPhone,
+    reference: () => setStep('method'),
     result: restart,
   }
 
@@ -108,34 +79,28 @@ export default function CheckInFlow({
       <TopBar centerTitle={TITLES[step]} onLogoClick={onHome} />
 
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-8 overflow-y-auto px-4 py-[clamp(1.5rem,4vh,3rem)]">
-        {step === 'method' && <ChooseMethod onHaveBooking={goPhone} onBookNow={onBookNow} />}
+        {step === 'method' && <ChooseMethod onHaveBooking={goEnter} onBookNow={onBookNow} />}
 
-        {step === 'phone' && (
-          <EnterNumber phone={phone} setPhone={setPhone} country={country} setCountry={setCountry} onSubmit={sendOtp} />
-        )}
-
-        {step === 'otp' && (
-          <VerifyOtp
-            phone={phone}
-            country={country}
-            otp={otp}
-            setOtp={setOtp}
-            demoCode={otpCode}
-            error={otpError}
-            verifying={verifying}
-            resendCooldown={resendCooldown}
-            onVerify={verifyOtp}
-            onResend={resendOtp}
+        {step === 'reference' && (
+          <EnterBookingId
+            bookingId={bookingId}
+            setBookingId={setBookingId}
+            error={error}
+            searching={lookup.isPending}
+            onSubmit={() => void find()}
           />
         )}
 
         {step === 'result' && (
           <CheckInResult
-            status={resultStatus}
-            booking={bookingQuery.data}
+            status={booking ? 'found' : 'not-found'}
+            booking={booking ?? undefined}
             onRentEquipment={onStore}
             onHome={onHome}
-            onRetry={goPhone}
+            onRetry={() => {
+              setBookingId('')
+              goEnter()
+            }}
             onBookNow={onBookNow}
           />
         )}
@@ -145,7 +110,7 @@ export default function CheckInFlow({
         onBack={backHandlers[step]}
         onHome={step === 'result' ? undefined : onHome}
         step={STEP_INDEX[step]}
-        totalSteps={STEP_INDEX[step] ? 3 : undefined}
+        totalSteps={STEP_INDEX[step] ? 2 : undefined}
       />
     </div>
   )

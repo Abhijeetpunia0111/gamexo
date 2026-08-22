@@ -2,6 +2,8 @@ node_modules/
 dist/
 build/
 .cache/
+# Turbo's local task cache. Written by any `pnpm typecheck`/`lint`/`build`.
+.turbo/
 .env*
 .vite/
 vite.config.*.timestamp-*

@@ -1,6 +1,6 @@
 import { Download } from 'lucide-react'
 import { money } from '../lib/format'
-import { shortId, type InvoiceData } from './invoice'
+import type { InvoiceData } from './invoice'
 
 export default function InvoiceDocument({
   invoice,
@@ -48,7 +48,7 @@ export default function InvoiceDocument({
             <p className="mt-1 text-xs text-slate">{invoice.formalDate}</p>
             {invoice.bookingId && (
               <p className="text-xs text-slate">
-                {invoice.invoiceNo ?? shortId(invoice.bookingId)}
+                {invoice.invoiceNo ?? invoice.bookingRef}
               </p>
             )}
           </div>

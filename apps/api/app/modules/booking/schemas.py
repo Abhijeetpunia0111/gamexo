@@ -415,6 +415,10 @@ class BookingOut(BaseModel):
     model_config = ORM
 
     id: uuid.UUID
+    #: `XC-B-0042` — what the customer is given and types at the kiosk to check in.
+    #: The UUID stays the API's identifier; this is the human one, and every screen
+    #: that shows "the booking id" to a person should show this.
+    reference: str
     customer_id: uuid.UUID | None
     customer_name: str
     customer_phone: str | None

@@ -30,9 +30,9 @@ from app.db.types import enum_type, money
 
 
 class CounterKind(StrEnum):
-    """The four human-readable ID series the frontend uses.
+    """The human-readable ID series the frontend uses.
 
-    All four leak business volume if implemented as a global sequence: an academy
+    All of them leak business volume if implemented as a global sequence: an academy
     that signs up second would see its first invoice numbered XC-2024-0873 and learn
     exactly how much business every other tenant has done.
     """
@@ -41,6 +41,11 @@ class CounterKind(StrEnum):
     MEMBER = "member"  # XC-M-0001
     COACH = "coach"  # XC-C-001
     STUDENT = "student"  # XC-S-001
+    #: XC-B-0042 — what a customer reads off their ticket and types at the kiosk to
+    #: check in. Sequential rather than a slice of the UUID because six hex
+    #: characters collide within a few thousand bookings, and "is it a B or an 8?"
+    #: is not a question to put to someone at a counter.
+    BOOKING = "booking"  # XC-B-0042
 
 
 class InvoiceStatus(StrEnum):

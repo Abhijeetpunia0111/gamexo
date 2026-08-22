@@ -202,6 +202,21 @@ export const api = {
   getBooking: (bookingId: string) =>
     request<Ok<'/api/v1/bookings/{booking_id}', 'get'>>(`/api/v1/bookings/${bookingId}`),
 
+  /**
+   * Find a booking by the reference the customer quotes — backs kiosk check-in.
+   *
+   * The server normalises the input, so `XC-B-0042`, `XCB0042`, `B-42` and `42` all
+   * resolve to the same booking. Don't validate the shape before calling: being
+   * stricter here than the API would reject codes it accepts.
+   *
+   * **404 is the ordinary answer**, not an exception — a mistyped code and a phone
+   * number typed out of habit both land there, and both mean "no booking found".
+   */
+  lookupBooking: (reference: string) =>
+    request<Ok<'/api/v1/bookings/lookup', 'get'>>('/api/v1/bookings/lookup', {
+      query: { reference },
+    }),
+
   /** Prices a booking without creating it — used for the live invoice preview. */
   quoteBooking: (body: {
     court_id: string

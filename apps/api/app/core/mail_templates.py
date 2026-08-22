@@ -131,7 +131,13 @@ def booking_confirmation(
             *(f"{label}: {value}" for label, value in charges if value),
             "",
             outstanding,
-            f"Reference: {booking.id}",
+            "",
+            # The one line the customer needs on arrival, so it stands alone rather
+            # than trailing the charges. Previously this printed booking.id — a
+            # 36-character UUID that nobody could read out at a counter, let alone
+            # key into a kiosk.
+            f"Booking ID: {booking.reference}",
+            "Show this at the counter to check in.",
         ]
     )
 
@@ -142,8 +148,18 @@ def booking_confirmation(
         _rows(lines)
         + '<div style="height:18px"></div>'
         + _rows([c for c in charges if c[1]], emphasise_last=True)
-        + f'<p style="margin:18px 0 0;font-size:14px;color:#111111;">{escape(outstanding)}</p>',
-        f"Reference {booking.id}. Please arrive a few minutes early.",
+        + f'<p style="margin:18px 0 0;font-size:14px;color:#111111;">{escape(outstanding)}</p>'
+        # Big and monospaced because it is about to be typed into a touchscreen from
+        # a phone held in the other hand.
+        + '<div style="margin:22px 0 0;padding:14px;border:1px solid #e7ebf0;'
+        'border-radius:10px;text-align:center;">'
+        '<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;'
+        'color:#8c8c8c;">Booking ID</div>'
+        '<div style="margin-top:4px;font-family:monospace;font-size:22px;'
+        f'font-weight:700;color:#111111;">{escape(booking.reference)}</div>'
+        "</div>",
+        "Type your Booking ID at the counter to check in. "
+        "Please arrive a few minutes early.",
     )
     return subject, text, html
 

@@ -481,6 +481,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bookings/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find a booking by the reference a customer quotes
+         * @description Backs check-in at the kiosk, where someone types the code from their ticket on a touchscreen.
+         *
+         *     The input is normalised before matching, so `XC-B-0042`, `xc b 0042`, `B-42` and `42` all resolve to the same booking — the tenant is already fixed by the host, so the short forms are unambiguous. Anything that cannot be a reference at all (a phone number typed out of habit, a name) is a **404** rather than a validation error: from the screen's point of view both mean the same thing, and 'no booking found' is the useful message.
+         *
+         *     Declared above `/bookings/{booking_id}` deliberately — routes match in order, and `lookup` would otherwise be parsed as a malformed UUID.
+         */
+        get: operations["booking_lookupBooking"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bookings/quote": {
         parameters: {
             query?: never;
@@ -2426,6 +2450,8 @@ export interface components {
             /** Payment Method */
             payment_method: string | null;
             payment_status: components["schemas"]["PaymentStatus"];
+            /** Reference */
+            reference: string;
             /** Source Platform */
             source_platform?: string | null;
             /**
@@ -2541,6 +2567,8 @@ export interface components {
             /** Payment Method */
             payment_method: string | null;
             payment_status: components["schemas"]["PaymentStatus"];
+            /** Reference */
+            reference: string;
             /** Source Platform */
             source_platform?: string | null;
             /**
@@ -4270,6 +4298,8 @@ export interface components {
             id: string;
             /** Payment Status */
             payment_status: string;
+            /** Reference */
+            reference: string;
             /** Source Platform */
             source_platform: string | null;
             /**
@@ -6775,6 +6805,45 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BookingDetail"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    booking_lookupBooking: {
+        parameters: {
+            query: {
+                /** @description As printed on the ticket, e.g. XC-B-0042 */
+                reference: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDetail"];
+                };
+            };
+            /** @description No booking with that reference. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

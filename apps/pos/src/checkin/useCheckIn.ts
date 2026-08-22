@@ -1,39 +1,40 @@
-import { useQuery } from '@tanstack/react-query'
-import { api } from '../api/client'
+import { useMutation } from '@tanstack/react-query'
+import { api, ApiError } from '../api/client'
 import type { components } from '../api/schema'
 
 export type CheckinBooking = components['schemas']['BookingDetail']
 
-const rank = (status: string) => (status === 'active' ? 0 : status === 'upcoming' ? 1 : status === 'overdue' ? 2 : 3)
-
-/** Finds the most relevant live booking for a phone number just cleared by OTP — active
- *  right now beats upcoming-later, which beats anything already closed out. `getBooking`
- *  (not the list item) so the result card can show sport/court names, not just ids. */
-export function useFindBookingByPhone(phone: string | null) {
-  return useQuery({
-    queryKey: ['checkin-booking-by-phone', phone],
-    queryFn: async () => {
-      const res = await api.listBookings({ search: phone!, size: 15 })
-      const live = (res.items ?? []).filter((b) => b.status !== 'cancelled' && b.status !== 'completed')
-      if (live.length === 0) return null
-
-      live.sort((a, b) => {
-        const r = rank(a.status) - rank(b.status)
-        return r !== 0 ? r : new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
-      })
-
-      return api.getBooking(live[0].id)
-    },
-    enabled: !!phone,
-    retry: false,
-    staleTime: 0,
+/**
+ * Resolve a typed Booking ID to the booking.
+ *
+ * A mutation rather than a query, because this fires on a button press and its
+ * result is a screen transition — not state that should refetch, cache, or re-run
+ * when the component happens to remount.
+ *
+ * Replaced `useFindBookingByPhone`, which searched every booking for a phone number
+ * and then guessed which one the customer meant by ranking active over upcoming.
+ * A reference identifies exactly one booking, so there is nothing left to guess.
+ */
+export function useLookupBooking() {
+  return useMutation({
+    mutationFn: (reference: string) => api.lookupBooking(reference),
   })
 }
 
-export const maskPhone = (phone: string) =>
-  phone.length > 4 ? `${phone.slice(0, 2)}${'*'.repeat(phone.length - 4)}${phone.slice(-2)}` : phone
+/** What to put on screen when a lookup fails.
+ *
+ *  A 404 is the ordinary case here — mistyped code, wrong academy's ticket, phone
+ *  number typed out of habit — so it reads as a prompt to try again rather than as
+ *  something being broken. Anything else genuinely is. */
+export function lookupErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.isNotFound) {
+    return "We couldn't find that Booking ID. Check it and try again."
+  }
+  return 'Something went wrong looking that up. Please ask at the counter.'
+}
 
 export const timeLabel = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 
-export const bookingTypeLabel = (type: string) => (type === 'online' ? 'Booked online' : 'Booked at the counter')
+export const bookingTypeLabel = (type: string) =>
+  type === 'online' ? 'Booked online' : 'Booked at the counter'

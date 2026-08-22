@@ -1,31 +1,55 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import QRCode from 'qrcode'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import type { components } from '../api/schema'
 
 export type CheckoutBooking = components['schemas']['BookingDetail']
 
-/** Finds the walk-in's current session by phone for the settle-bill flow. Goes by the
- *  actual clock rather than the `status` enum — nothing here flips a booking from
- *  "upcoming" to "active"/"completed" as its slot passes, so a booking whose start time
- *  has already come is "checked in" regardless of what its stored status still says. */
-export function useActiveSessionByPhone(phone: string | null) {
-  return useQuery({
-    queryKey: ['checkout-active-session', phone],
-    queryFn: async () => {
-      const res = await api.listBookings({ search: phone!, size: 15 })
-      const now = Date.now()
-      const live = (res.items ?? []).filter(
-        (b) => b.status !== 'cancelled' && new Date(b.starts_at).getTime() <= now,
-      )
+/** A session can be settled once its slot has begun and it was not cancelled.
+ *
+ *  Goes by the actual clock rather than the `status` enum: nothing flips a booking
+ *  from "upcoming" to "active" as its slot arrives, so a stored status of "upcoming"
+ *  on a booking that started an hour ago means the enum is stale, not that the
+ *  customer is absent — they are standing at the counter asking to pay. */
+const settleable = (b: { status: string; starts_at: string }) =>
+  b.status !== 'cancelled' && new Date(b.starts_at).getTime() <= Date.now()
+
+/**
+ * Find the session to settle from whatever the customer offers.
+ *
+ * Two passes, in this order:
+ *
+ * 1. **Exact booking reference.** `search` is a substring match, so it cannot find
+ *    `XC-B-0042` from `42` or `XCB0042` — the lookup endpoint normalises those, and
+ *    it is also the only path that guarantees one booking rather than a best guess.
+ * 2. **Name or phone**, falling back to a search. Several may match, so the most
+ *    recently started wins: that is the session in front of you.
+ *
+ * A mutation, not a query — it fires on a button press and its result is a screen
+ * transition, not state that should refetch on remount.
+ */
+export function useFindSession() {
+  return useMutation({
+    mutationFn: async (query: string): Promise<CheckoutBooking | null> => {
+      const trimmed = query.trim()
+      if (!trimmed) return null
+
+      try {
+        const exact = await api.lookupBooking(trimmed)
+        return settleable(exact) ? exact : null
+      } catch (err) {
+        // Not a reference, or not one of ours. Fall through to the broad search
+        // rather than failing — anything else is a real error worth surfacing.
+        if (!(err instanceof ApiError && err.isNotFound)) throw err
+      }
+
+      const res = await api.listBookings({ search: trimmed, size: 15 })
+      const live = (res.items ?? []).filter(settleable)
       if (live.length === 0) return null
       live.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
       return api.getBooking(live[0].id)
     },
-    enabled: !!phone,
-    retry: false,
-    staleTime: 0,
   })
 }
 

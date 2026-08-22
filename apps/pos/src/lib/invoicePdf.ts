@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import { money } from './format'
-import { shortId, type InvoiceData } from '../booking/invoice'
+import type { InvoiceData } from '../booking/invoice'
 
 const LEFT = 48
 const RIGHT = 548
@@ -25,7 +25,7 @@ export function downloadInvoicePdf(inv: InvoiceData) {
   doc.setTextColor(0)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
-  doc.text(inv.bookingId ? `Invoice — ${inv.invoiceNo ?? shortId(inv.bookingId)}` : 'Provisional Invoice', LEFT, y)
+  doc.text(inv.bookingRef ? `Invoice — ${inv.invoiceNo ?? inv.bookingRef}` : 'Provisional Invoice', LEFT, y)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   doc.text(inv.formalDate, RIGHT, y, { align: 'right' })
@@ -108,5 +108,5 @@ export function downloadInvoicePdf(inv: InvoiceData) {
     { maxWidth: RIGHT - LEFT },
   )
 
-  doc.save(`${inv.bookingId ? shortId(inv.bookingId) : 'invoice'}.pdf`)
+  doc.save(`${inv.bookingRef ?? 'invoice'}.pdf`)
 }

@@ -156,7 +156,7 @@ export default function BookingsPage() {
                       <tr key={booking.id} className={`border-b border-border-card/80 last:border-none transition-colors ${rowAccent(selectedId === booking.id)}`}>
                         <td className="px-3 py-3">
                           <button type="button" className="text-left font-semibold text-ink" onClick={() => setSelectedId(booking.id)}>
-                            {booking.id}
+                            {booking.reference}
                           </button>
                         </td>
                         <td className="px-3 py-3">
@@ -270,7 +270,7 @@ export default function BookingsPage() {
                     {previousBookings.map((booking) => (
                       <div key={booking.id} className="rounded-lg border border-border-card bg-white px-3 py-3 text-sm">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-ink">{booking.id}</span>
+                          <span className="font-medium text-ink">{booking.reference}</span>
                           <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${statusTone(booking.payment)}`}>
                             {paymentLabel(booking)}
                           </span>

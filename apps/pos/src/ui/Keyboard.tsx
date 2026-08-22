@@ -25,15 +25,22 @@ function stayFocused(e: MouseEvent) {
 }
 
 /** On-screen alphanumeric keyboard for the counter's touchscreen, for text fields a
- *  numeric Keypad can't cover. Callers route keys into whichever input is active. */
+ *  numeric Keypad can't cover. Callers route keys into whichever input is active.
+ *
+ *  `spaceLabel` relabels the wide key without changing the layout. Check-in types a
+ *  booking reference, where the separator people reach for is a hyphen and a space
+ *  bar is the wrong affordance — but a key whose icon says "space" must not insert
+ *  something else, so the caller changes both together. */
 export default function Keyboard({
   onChar,
   onSpace,
   onBackspace,
+  spaceLabel,
 }: {
   onChar: (char: string) => void
   onSpace: () => void
   onBackspace: () => void
+  spaceLabel?: string
 }) {
   return (
     <div
@@ -70,10 +77,10 @@ export default function Keyboard({
         type="button"
         onMouseDown={stayFocused}
         onClick={onSpace}
-        aria-label="Space"
+        aria-label={spaceLabel ? `Insert ${spaceLabel}` : 'Space'}
         className={`${keyBase} col-span-3 bg-border-input hover:bg-[#e1e1e1] active:bg-[#d5d5d5]`}
       >
-        <Space className="size-[clamp(1.15rem,2vw,1.65rem)]" strokeWidth={2} />
+        {spaceLabel ?? <Space className="size-[clamp(1.15rem,2vw,1.65rem)]" strokeWidth={2} />}
       </button>
       <button
         type="button"

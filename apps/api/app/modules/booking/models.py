@@ -400,9 +400,23 @@ class Booking(TenantScoped):
         Index("ix_booking_tenant_start", "tenant_id", "starts_at"),
         Index("ix_booking_tenant_customer", "tenant_id", "customer_id"),
         Index("ix_booking_tenant_status", "tenant_id", "status"),
+        # The check-in lookup. Unique per academy, not globally: the reference is a
+        # per-tenant counter, so two academies both reaching XC-B-0042 is expected.
+        # Uniqueness is what lets the kiosk resolve a typed code to exactly one
+        # booking instead of asking the customer which of two they meant.
+        Index("uq_booking_tenant_reference", "tenant_id", "reference", unique=True),
         CheckConstraint("ends_at > starts_at", name="ends_after_starts"),
         CheckConstraint("amount_paid >= 0 AND total >= 0", name="amounts_non_negative"),
     )
+
+    #: What the customer reads off their ticket and types at the kiosk: `XC-B-0042`.
+    #: Allocated from the same per-tenant DocumentCounter series as invoices, so it
+    #: is short, gapless and never collides.
+    #:
+    #: Not derived from `id`. A UUID slice short enough to type is short enough to
+    #: collide — six hex characters duplicate within a few thousand bookings — and
+    #: check-in is exactly the flow where handing someone the wrong booking matters.
+    reference: Mapped[str] = mapped_column(String(32), nullable=False)
 
     customer_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("customer.id", ondelete="RESTRICT")

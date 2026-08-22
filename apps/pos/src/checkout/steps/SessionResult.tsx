@@ -38,7 +38,7 @@ function Found({
       <div className="flex w-full flex-col gap-[clamp(1rem,2vw,1.375rem)] rounded-2xl border-[3px] border-white bg-white px-[clamp(1.25rem,2.5vw,1.75rem)] py-[clamp(1.25rem,2.5vw,1.75rem)] shadow-[0px_20px_45px_-15px_rgba(0,0,0,0.18)]">
         <div className="flex flex-col gap-1">
           <p className="text-[clamp(0.75rem,0.9vw,0.8125rem)] font-medium text-muted">
-            #BK-{booking.id.slice(0, 8).toUpperCase()}
+            {booking.reference}
           </p>
           <p className="font-display text-[clamp(1.25rem,2vw,1.5rem)] font-bold text-ink">{booking.customer_name}</p>
           <p className="text-[clamp(0.9375rem,1.2vw,1.0625rem)] font-semibold text-ink">

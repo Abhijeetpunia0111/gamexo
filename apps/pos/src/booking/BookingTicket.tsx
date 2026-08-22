@@ -1,6 +1,6 @@
 import { Wallet } from 'lucide-react'
 import { money } from '../lib/format'
-import { shortId, type InvoiceData } from './invoice'
+import type { InvoiceData } from './invoice'
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -24,7 +24,7 @@ export default function BookingTicket({ invoice, className = '' }: { invoice: In
           </p>
           {confirmed && invoice.bookingId && (
             <p className="mt-1 text-xs text-slate">
-              Booking {shortId(invoice.bookingId)} ·{' '}
+              Booking {invoice.bookingRef} ·{' '}
               <span className={`font-medium ${invoice.balanceDue > 0 ? 'text-flame' : 'text-positive'}`}>
                 {invoice.balanceDue > 0 ? 'Due' : 'Paid'}
               </span>

@@ -9,6 +9,9 @@ export type InvoiceData = {
   facility: typeof FACILITY_PROFILE
   invoiceNo: string | null
   bookingId: string | null
+  /** `XC-B-0042` — what the customer is asked for at the counter. Null until the
+   *  booking is actually created, since the number is allocated server-side. */
+  bookingRef: string | null
   confirmed: boolean
   sportName: string
   courtName: string
@@ -68,6 +71,7 @@ export function buildProvisionalInvoice(
     facility: FACILITY_PROFILE,
     invoiceNo: null,
     bookingId: null,
+    bookingRef: null,
     confirmed: false,
     sportName: sport?.name ?? '',
     courtName: court?.name ?? '',
@@ -113,6 +117,7 @@ export function buildConfirmedInvoice(booking: BookingDetail, draft: Draft, invo
     facility: FACILITY_PROFILE,
     invoiceNo: invoice?.invoice_no ?? null,
     bookingId: booking.id,
+    bookingRef: booking.reference,
     confirmed: true,
     sportName: booking.sport_name ?? '',
     courtName: booking.court_name ?? '',
@@ -144,7 +149,7 @@ export function buildConfirmedInvoice(booking: BookingDetail, draft: Draft, invo
 export function invoiceSummaryText(inv: InvoiceData) {
   const lines = [
     inv.facility.name,
-    inv.bookingId ? `Booking ${shortId(inv.bookingId)}${inv.invoiceNo ? ` · Invoice ${inv.invoiceNo}` : ''}` : 'Provisional invoice',
+    inv.bookingRef ? `Booking ${inv.bookingRef}${inv.invoiceNo ? ` · Invoice ${inv.invoiceNo}` : ''}` : 'Provisional invoice',
     `${inv.sportName} · ${inv.courtName}`,
     `${inv.dateLabel}${inv.timeRange ? `, ${inv.timeRange}` : ''}`,
     '',
@@ -157,9 +162,4 @@ export function invoiceSummaryText(inv: InvoiceData) {
     inv.confirmed ? `${inv.balanceDue > 0 ? `Balance due: ${money(inv.balanceDue)}` : 'Paid in full'}` : '',
   ]
   return lines.filter(Boolean).join('\n')
-}
-
-/** Booking ids are UUIDs — the last segment is what fits on a ticket and a spoken counter number. */
-export function shortId(bookingId: string) {
-  return bookingId.split('-').pop()?.slice(-6).toUpperCase() ?? bookingId
 }

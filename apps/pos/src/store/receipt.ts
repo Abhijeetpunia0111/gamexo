@@ -1,5 +1,5 @@
 import { FACILITY_PROFILE } from '../facility/facilityData'
-import { formalDate, toISO } from '../lib/format'
+import { formalDate, toISO, toPaise } from '../lib/format'
 import type { EquipmentItem } from '../api/hooks'
 import type { InvoiceData } from '../booking/invoice'
 import { trayLines } from '../booking/offers'
@@ -23,8 +23,11 @@ export function buildQuickSaleReceipt(
     amount: l.amount,
   }))
   const subtotal = lines.reduce((sum, l) => sum + l.amount, 0)
-  const gst = Math.round(subtotal * 0.18)
-  const cgst = Math.round(gst / 2)
+  // toPaise, not Math.round — the same rule as booking/invoice.ts. Rounding to
+  // whole rupees here made the counter receipt disagree with the amount actually
+  // taken, and split an odd GST figure into two halves that did not add back up.
+  const gst = toPaise(subtotal * 0.18)
+  const cgst = toPaise(gst / 2)
   const total = subtotal + gst
   const today = toISO(new Date())
 
@@ -32,6 +35,8 @@ export function buildQuickSaleReceipt(
     facility: FACILITY_PROFILE,
     invoiceNo: null,
     bookingId: null,
+    // A shop sale with no court behind it, so there is no booking to reference.
+    bookingRef: null,
     confirmed: true,
     sportName: '',
     courtName: '',
