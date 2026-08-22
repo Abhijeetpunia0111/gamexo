@@ -105,7 +105,8 @@ function NotFound({ onRetry, onBookNow }: { onRetry: () => void; onBookNow: () =
       <div className="flex flex-col gap-2">
         <p className="font-display text-[clamp(1.15rem,1.9vw,1.5rem)] font-bold text-ink">No booking found</p>
         <p className="text-[clamp(0.9375rem,1.1vw,1rem)] text-muted">
-          We couldn't find an active booking for that number. Double check it, or book a court now.
+          We couldn't find a booking for that ID within its check-in window. Double check it, ask
+          reception for help, or book a court now.
         </p>
       </div>
       <div className="flex w-full flex-col gap-3">
@@ -121,7 +122,7 @@ function NotFound({ onRetry, onBookNow }: { onRetry: () => void; onBookNow: () =
           onClick={onRetry}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-muted py-[clamp(0.875rem,1.6vw,1.125rem)] text-[clamp(1rem,1.2vw,1.125rem)] font-bold text-ink"
         >
-          Try another number
+          Try another ID
         </button>
       </div>
     </div>

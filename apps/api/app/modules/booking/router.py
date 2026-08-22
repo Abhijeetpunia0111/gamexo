@@ -696,31 +696,67 @@ async def create_booking(payload: BookingCreate, db: Db, principal: RequireKiosk
 
 
 @router.get(
-    "/bookings/lookup",
+    "/bookings/checkin-lookup",
     response_model=BookingDetail,
-    summary="Find a booking by the reference a customer quotes",
+    summary="Find a booking to check in by its booking id",
     description=(
-        "Backs check-in at the kiosk, where someone types the code from their ticket "
-        "on a touchscreen.\n\n"
-        "The input is normalised before matching, so `XC-B-0042`, `xc b 0042`, "
-        "`B-42` and `42` all resolve to the same booking — the tenant is already "
-        "fixed by the host, so the short forms are unambiguous. Anything that cannot "
-        "be a reference at all (a phone number typed out of habit, a name) is a "
-        "**404** rather than a validation error: from the screen's point of view "
-        "both mean the same thing, and 'no booking found' is the useful message.\n\n"
-        "Declared above `/bookings/{booking_id}` deliberately — routes match in "
-        "order, and `lookup` would otherwise be parsed as a malformed UUID."
+        "For the kiosk's 'Already have a Booking' flow: matches `code` against this "
+        "booking's own id (punctuation-insensitive, since a customer only ever holds "
+        "a shortened piece of the UUID) or a partner's `external_ref` (Playo, Hudle, "
+        "...), matched verbatim since that string is opaque to us.\n\n"
+        "Scoped to bookings starting within 30 minutes either side of now. A 404 "
+        "covers both 'no such id' and 'right id, wrong time' — check-in doesn't "
+        "distinguish them, so a customer can't use it to fish for whether a code is "
+        "valid outside its window."
     ),
-    responses={404: {"description": "No booking with that reference."}},
 )
-async def lookup_booking(
-    db: Db,
-    _: RequireKiosk,
-    reference: Annotated[str, Query(description="As printed on the ticket, e.g. XC-B-0042")],
-) -> BookingDetail:
-    booking = await service.find_by_reference(db, reference)
+async def checkin_lookup(db: Db, _: RequireKiosk, code: Annotated[str, Query(min_length=1)]) -> BookingDetail:
+    now = datetime.now(UTC)
+    window_start = now - service.CHECKIN_LOOKUP_WINDOW
+    window_end = now + service.CHECKIN_LOOKUP_WINDOW
+    stmt = select(Booking).where(
+        Booking.status != BookingStatus.CANCELLED,
+        Booking.starts_at >= window_start,
+        Booking.starts_at <= window_end,
+    )
+    candidates = (await db.execute(stmt)).scalars().all()
+    booking = next(
+        (b for b in candidates if service.matches_booking_code(b.id, b.external_ref, code)), None
+    )
     if booking is None:
-        raise NotFoundError("No booking found with that reference.")
+        raise NotFoundError("Booking not found.")
+    return await _detail(db, booking)
+
+
+@router.get(
+    "/bookings/checkout-lookup",
+    response_model=BookingDetail,
+    summary="Find a booking to settle by its booking id",
+    description=(
+        "Same id matching as `GET /bookings/checkin-lookup`, but for settling a "
+        "bill rather than confirming an arrival: matches any not-cancelled booking "
+        "that has already started, up to 12 hours back, with no upper bound — a "
+        "session settled late is still the same session. The most recently "
+        "started match wins if more than one fits."
+    ),
+)
+async def checkout_lookup(db: Db, _: RequireKiosk, code: Annotated[str, Query(min_length=1)]) -> BookingDetail:
+    now = datetime.now(UTC)
+    stmt = (
+        select(Booking)
+        .where(
+            Booking.status != BookingStatus.CANCELLED,
+            Booking.starts_at >= now - service.CHECKOUT_LOOKUP_LOOKBACK,
+            Booking.starts_at <= now,
+        )
+        .order_by(Booking.starts_at.desc())
+    )
+    candidates = (await db.execute(stmt)).scalars().all()
+    booking = next(
+        (b for b in candidates if service.matches_booking_code(b.id, b.external_ref, code)), None
+    )
+    if booking is None:
+        raise NotFoundError("Booking not found.")
     return await _detail(db, booking)
 
 

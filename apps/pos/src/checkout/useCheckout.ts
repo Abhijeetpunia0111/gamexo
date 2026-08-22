@@ -6,50 +6,23 @@ import type { components } from '../api/schema'
 
 export type CheckoutBooking = components['schemas']['BookingDetail']
 
-/** A session can be settled once its slot has begun and it was not cancelled.
- *
- *  Goes by the actual clock rather than the `status` enum: nothing flips a booking
- *  from "upcoming" to "active" as its slot arrives, so a stored status of "upcoming"
- *  on a booking that started an hour ago means the enum is stale, not that the
- *  customer is absent — they are standing at the counter asking to pay. */
-const settleable = (b: { status: string; starts_at: string }) =>
-  b.status !== 'cancelled' && new Date(b.starts_at).getTime() <= Date.now()
-
-/**
- * Find the session to settle from whatever the customer offers.
- *
- * Two passes, in this order:
- *
- * 1. **Exact booking reference.** `search` is a substring match, so it cannot find
- *    `XC-B-0042` from `42` or `XCB0042` — the lookup endpoint normalises those, and
- *    it is also the only path that guarantees one booking rather than a best guess.
- * 2. **Name or phone**, falling back to a search. Several may match, so the most
- *    recently started wins: that is the session in front of you.
- *
- * A mutation, not a query — it fires on a button press and its result is a screen
- * transition, not state that should refetch on remount.
- */
-export function useFindSession() {
-  return useMutation({
-    mutationFn: async (query: string): Promise<CheckoutBooking | null> => {
-      const trimmed = query.trim()
-      if (!trimmed) return null
-
+/** Finds the session to settle by booking id. Unlike check-in's lookup, this has no
+ *  upper time bound — a session running long is exactly the case checkout still has
+ *  to find — which is why it's a separate backend endpoint from check-in's. */
+export function useActiveSessionByCode(code: string | null) {
+  return useQuery({
+    queryKey: ['checkout-active-session', code],
+    queryFn: async () => {
       try {
-        const exact = await api.lookupBooking(trimmed)
-        return settleable(exact) ? exact : null
+        return await api.checkoutLookup(code!.trim())
       } catch (err) {
-        // Not a reference, or not one of ours. Fall through to the broad search
-        // rather than failing — anything else is a real error worth surfacing.
-        if (!(err instanceof ApiError && err.isNotFound)) throw err
+        if (err instanceof ApiError && err.isNotFound) return null
+        throw err
       }
-
-      const res = await api.listBookings({ search: trimmed, size: 15 })
-      const live = (res.items ?? []).filter(settleable)
-      if (live.length === 0) return null
-      live.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
-      return api.getBooking(live[0].id)
     },
+    enabled: !!code,
+    retry: false,
+    staleTime: 0,
   })
 }
 

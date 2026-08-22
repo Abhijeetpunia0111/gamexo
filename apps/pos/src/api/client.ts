@@ -202,19 +202,18 @@ export const api = {
   getBooking: (bookingId: string) =>
     request<Ok<'/api/v1/bookings/{booking_id}', 'get'>>(`/api/v1/bookings/${bookingId}`),
 
-  /**
-   * Find a booking by the reference the customer quotes — backs kiosk check-in.
-   *
-   * The server normalises the input, so `XC-B-0042`, `XCB0042`, `B-42` and `42` all
-   * resolve to the same booking. Don't validate the shape before calling: being
-   * stricter here than the API would reject codes it accepts.
-   *
-   * **404 is the ordinary answer**, not an exception — a mistyped code and a phone
-   * number typed out of habit both land there, and both mean "no booking found".
-   */
-  lookupBooking: (reference: string) =>
-    request<Ok<'/api/v1/bookings/lookup', 'get'>>('/api/v1/bookings/lookup', {
-      query: { reference },
+  /** Check-in by booking id — 404s if there's no match, or the match is outside its
+   *  ±30 minute window. `code` can be our own booking id or a partner's reference. */
+  checkinLookup: (code: string) =>
+    request<Ok<'/api/v1/bookings/checkin-lookup', 'get'>>('/api/v1/bookings/checkin-lookup', {
+      query: { code },
+    }),
+
+  /** Same id matching as checkinLookup, but for settling a bill — any started,
+   *  not-cancelled booking from the last 12 hours, no upper time bound. */
+  checkoutLookup: (code: string) =>
+    request<Ok<'/api/v1/bookings/checkout-lookup', 'get'>>('/api/v1/bookings/checkout-lookup', {
+      query: { code },
     }),
 
   /** Prices a booking without creating it — used for the live invoice preview. */

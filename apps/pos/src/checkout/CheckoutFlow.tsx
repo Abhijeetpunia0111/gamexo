@@ -1,23 +1,23 @@
 import { useEffect, useState } from 'react'
 import { TopBar } from '../ui/TopBar'
 import { CheckinFooter } from '../checkin/Chrome'
+import EnterBookingId from '../checkin/steps/EnterBookingId'
 import { useRecordPayment, useInvoiceBooking, type InvoiceOut } from '../api/hooks'
-import FindSession from './steps/FindSession'
 import SessionResult from './steps/SessionResult'
 import PaymentMethod from './steps/PaymentMethod'
 import UpiQr from './steps/UpiQr'
 import AdminOtp from './steps/AdminOtp'
 import Settled from './steps/Settled'
-import { useFindSession, type CheckoutBooking } from './useCheckout'
+import { useActiveSessionByCode, type CheckoutBooking } from './useCheckout'
 
-type Step = 'find' | 'session' | 'payment' | 'upi-qr' | 'admin-otp' | 'settled'
+type Step = 'code' | 'session' | 'payment' | 'upi-qr' | 'admin-otp' | 'settled'
 type Method = 'upi' | 'cash'
 
 const RESEND_SECONDS = 30
 const generateOtp = () => String(Math.floor(10000 + Math.random() * 90000))
 
 const TITLES: Partial<Record<Step, string>> = {
-  find: 'Checkout',
+  code: 'Checkout',
   session: 'Checkout',
   payment: 'Checkout',
   'upi-qr': 'Checkout',
@@ -25,7 +25,7 @@ const TITLES: Partial<Record<Step, string>> = {
 }
 
 const STEP_INDEX: Partial<Record<Step, number>> = {
-  find: 1,
+  code: 1,
   session: 2,
   payment: 3,
   'upi-qr': 4,
@@ -34,10 +34,9 @@ const STEP_INDEX: Partial<Record<Step, number>> = {
 }
 
 export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
-  const [step, setStep] = useState<Step>('find')
-  const [query, setQuery] = useState('')
-  const [booking, setBooking] = useState<CheckoutBooking | null>(null)
-  const [lookupFailed, setLookupFailed] = useState(false)
+  const [step, setStep] = useState<Step>('code')
+  const [code, setCode] = useState('')
+  const [searchCode, setSearchCode] = useState<string | null>(null)
   const [method, setMethod] = useState<Method | null>(null)
   const [otp, setOtp] = useState('')
   const [otpCode, setOtpCode] = useState(generateOtp)
@@ -48,7 +47,7 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
   const [invoice, setInvoice] = useState<InvoiceOut | undefined>(undefined)
   const [settleError, setSettleError] = useState<string | null>(null)
 
-  const findSessionMutation = useFindSession()
+  const sessionQuery = useActiveSessionByCode(searchCode)
   const recordPayment = useRecordPayment()
   const invoiceBooking = useInvoiceBooking()
 
@@ -58,16 +57,8 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
     return () => clearTimeout(t)
   }, [step, resendCooldown])
 
-  const findSession = async () => {
-    setLookupFailed(false)
-    try {
-      const found = await findSessionMutation.mutateAsync(query)
-      setBooking(found)
-      setLookupFailed(found === null)
-    } catch {
-      setBooking(null)
-      setLookupFailed(true)
-    }
+  const findSession = () => {
+    setSearchCode(code)
     setStep('session')
   }
 
@@ -130,10 +121,9 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
   }
 
   const restart = () => {
-    setStep('find')
-    setQuery('')
-    setBooking(null)
-    setLookupFailed(false)
+    setStep('code')
+    setCode('')
+    setSearchCode(null)
     setMethod(null)
     setOtp('')
     setOtpError(null)
@@ -149,8 +139,8 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
       : 'not-found'
 
   const backHandlers: Record<Step, () => void> = {
-    find: onHome,
-    session: () => setStep('find'),
+    code: onHome,
+    session: () => setStep('code'),
     payment: () => setStep('session'),
     'upi-qr': () => setStep('payment'),
     'admin-otp': () => setStep(method === 'upi' ? 'upi-qr' : 'payment'),
@@ -162,13 +152,8 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
       <TopBar centerTitle={TITLES[step]} onLogoClick={onHome} />
 
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-8 overflow-y-auto px-4 py-[clamp(1.5rem,4vh,3rem)]">
-        {step === 'find' && (
-          <FindSession
-            query={query}
-            setQuery={setQuery}
-            searching={findSessionMutation.isPending}
-            onSubmit={() => void findSession()}
-          />
+        {step === 'code' && (
+          <EnterBookingId code={code} setCode={setCode} onSubmit={findSession} submitLabel="Find Booking" />
         )}
 
         {step === 'session' && (
@@ -176,10 +161,7 @@ export default function CheckoutFlow({ onHome }: { onHome: () => void }) {
             status={resultStatus}
             booking={booking ?? undefined}
             onSettle={() => setStep('payment')}
-            onRetry={() => {
-              setQuery('')
-              setStep('find')
-            }}
+            onRetry={() => setStep('code')}
             onHome={onHome}
           />
         )}

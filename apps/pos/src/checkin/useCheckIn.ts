@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { api, ApiError } from '../api/client'
 import type { components } from '../api/schema'
 
@@ -31,6 +31,26 @@ export function lookupErrorMessage(error: unknown): string {
     return "We couldn't find that Booking ID. Check it and try again."
   }
   return 'Something went wrong looking that up. Please ask at the counter.'
+}
+
+/** Looks a booking up by the id typed on the check-in keyboard. The backend already
+ *  scopes this to bookings starting within 30 minutes either side of now and 404s
+ *  otherwise — that 404 is a normal "not found" result here, not a query error. */
+export function useFindBookingByCode(code: string | null) {
+  return useQuery({
+    queryKey: ['checkin-booking-by-code', code],
+    queryFn: async () => {
+      try {
+        return await api.checkinLookup(code!.trim())
+      } catch (err) {
+        if (err instanceof ApiError && err.isNotFound) return null
+        throw err
+      }
+    },
+    enabled: !!code,
+    retry: false,
+    staleTime: 0,
+  })
 }
 
 export const timeLabel = (iso: string) =>

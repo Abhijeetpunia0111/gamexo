@@ -86,7 +86,7 @@ function NotFound({ onRetry }: { onRetry: () => void }) {
       <div className="flex flex-col gap-2">
         <p className="font-display text-[clamp(1.15rem,1.9vw,1.5rem)] font-bold text-ink">No active session found</p>
         <p className="text-[clamp(0.9375rem,1.1vw,1rem)] text-muted">
-          That number isn't checked into a game right now. Double check it and try again.
+          That booking ID isn't checked into a game right now. Double check it and try again.
         </p>
       </div>
       <button
@@ -94,7 +94,7 @@ function NotFound({ onRetry }: { onRetry: () => void }) {
         onClick={onRetry}
         className="flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-[clamp(0.875rem,1.6vw,1.125rem)] text-[clamp(1rem,1.2vw,1.125rem)] font-bold text-white"
       >
-        Try another number
+        Try another ID
       </button>
     </div>
   )
